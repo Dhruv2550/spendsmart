@@ -13,8 +13,8 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
 
   const navigation = [
     { id: "dashboard", label: "Dashboard", icon: Home },
-    { id: "investments", label: "Goals", icon: TrendingUp },
-    { id: "reports", label: "Reports", icon: BarChart3 },
+        { id: "analytics", label: "Analytics", icon: BarChart3 },
+    { id: "goals", label: "Goals", icon: TrendingUp },
     { id: "settings", label: "Settings", icon: Settings }
   ];
 

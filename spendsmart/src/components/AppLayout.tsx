@@ -1,9 +1,9 @@
 import { useState } from "react";
 import Navigation from "./Navigation";
 import Dashboard from "./Dashboard";
-import ReportsPage from "./ReportsPage";
+import AnalyticsPage from "./AnalyticsPage";
 import SettingsPage from "./SettingsPage";
-import InvestmentsPage from "./GoalsPage";
+import GoalsPage from "./GoalsPage";
 
 const AppLayout = () => {
   const [currentPage, setCurrentPage] = useState("dashboard");
@@ -16,12 +16,12 @@ const AppLayout = () => {
     switch (currentPage) {
       case "dashboard":
         return <Dashboard monthlySavings={sharedBudget} expenseLimit={sharedExpenseLimit} />;
-      case "investments":
-        console.log("Rendering investments"); // Debug line
-        return <InvestmentsPage />;
-      case "reports":
-        console.log("Rendering reports"); // Debug line
-        return <ReportsPage monthlySavings={sharedBudget} />;
+      case "goals":
+        console.log("Rendering goals"); // Debug line
+        return <GoalsPage />;
+      case "analytics":
+        console.log("Rendering analytics"); // Debug line
+        return <AnalyticsPage monthlySavings={sharedBudget} />;
       case "settings":
         console.log("Rendering settings"); // Debug line
         return <SettingsPage 

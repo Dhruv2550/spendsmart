@@ -210,7 +210,7 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
             </CardHeader>
             <CardContent className="space-y-4">
               {[
-                { label: "Monthly Reports", description: "Get monthly spending summaries", enabled: true },
+                { label: "Monthly analytics", description: "Get monthly spending summaries", enabled: true },
                 { label: "Budget Warnings", description: "Alert when approaching budget limits", enabled: true },
                 { label: "Goal Achievements", description: "Celebrate when you hit savings goals", enabled: false },
                 { label: "Weekly Insights", description: "Receive weekly spending insights", enabled: false }

@@ -59,7 +59,7 @@ interface InvestmentContribution {
   note?: string;
 }
 
-const InvestmentsPage: React.FC = () => {
+const GoalsPage: React.FC = () => {
   const [goals, setGoals] = useState<InvestmentGoal[]>([]);
   const [contributions, setContributions] = useState<InvestmentContribution[]>([]);
   const [showAddGoal, setShowAddGoal] = useState(false);
@@ -1070,4 +1070,4 @@ const InvestmentsPage: React.FC = () => {
   );
 };
 
-export default InvestmentsPage;
+export default GoalsPage;
