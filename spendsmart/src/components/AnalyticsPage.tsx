@@ -33,6 +33,20 @@ interface CategoryTrend {
   trend: 'up' | 'down' | 'stable';
 }
 
+interface MonthlyTrendData {
+  month: string;
+  monthLabel: string;
+  totalIncome: number;
+  totalExpenses: number;
+  netSavings: number;
+}
+
+interface CategoryTrendData {
+  month: string;
+  monthLabel: string;
+  [key: string]: string | number;
+}
+
 const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,6 +100,92 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
       months.add(t.date.substring(0, 7));
     });
     return Array.from(months).sort().reverse();
+  };
+
+  // Generate monthly trend data for line graphs
+  const getMonthlyTrendData = (): MonthlyTrendData[] => {
+    const monthlyData: { [month: string]: MonthlyTrendData } = {};
+    
+    // Get all unique months from transactions
+    const allMonths = new Set<string>();
+    transactions.forEach(t => {
+      allMonths.add(t.date.substring(0, 7));
+    });
+    
+    // Sort months chronologically
+    const sortedMonths = Array.from(allMonths).sort();
+    
+    sortedMonths.forEach(month => {
+      const monthTransactions = transactions.filter(t => t.date.startsWith(month));
+      const income = monthTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+      const expenses = monthTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+      
+      monthlyData[month] = {
+        month,
+        monthLabel: new Date(month + '-01').toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+        totalIncome: income,
+        totalExpenses: expenses,
+        netSavings: income - expenses
+      };
+    });
+    
+    return sortedMonths.map(month => monthlyData[month]);
+  };
+
+  // Generate category trend data for category line graphs
+  const getCategoryTrendData = (): CategoryTrendData[] => {
+    const monthlyData: { [month: string]: CategoryTrendData } = {};
+    
+    // Get all unique months and categories
+    const allMonths = new Set<string>();
+    const allCategories = new Set<string>();
+    
+    transactions.forEach(t => {
+      allMonths.add(t.date.substring(0, 7));
+      if (t.type === 'expense') {
+        allCategories.add(t.category);
+      }
+    });
+    
+    const sortedMonths = Array.from(allMonths).sort();
+    const sortedCategories = Array.from(allCategories).sort();
+    
+    // Initialize monthly data
+    sortedMonths.forEach(month => {
+      monthlyData[month] = {
+        month,
+        monthLabel: new Date(month + '-01').toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+      };
+      
+      // Initialize all categories to 0
+      sortedCategories.forEach(category => {
+        monthlyData[month][category] = 0;
+      });
+    });
+    
+    // Populate with actual spending data
+    transactions.filter(t => t.type === 'expense').forEach(t => {
+      const month = t.date.substring(0, 7);
+      if (monthlyData[month]) {
+        monthlyData[month][t.category] = (monthlyData[month][t.category] as number) + t.amount;
+      }
+    });
+    
+    return sortedMonths.map(month => monthlyData[month]);
+  };
+
+  // Get top spending categories for line graph display
+  const getTopCategories = (limit: number = 6): string[] => {
+    const categoryTotals: { [cat: string]: number } = {};
+    
+    transactions.filter(t => t.type === 'expense').forEach(t => {
+      categoryTotals[t.category] = (categoryTotals[t.category] || 0) + t.amount;
+    });
+    
+    return Object.entries(categoryTotals)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, limit)
+      .map(([category]) => category);
   };
 
   // Calculate Financial Health Score for selected month
@@ -277,6 +377,17 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
   const spendingHeatmap = getSpendingHeatmap();
   const selectedMonthStats = getSelectedMonthStats();
 
+  // New line graph data
+  const monthlyTrendData = getMonthlyTrendData();
+  const categoryTrendData = getCategoryTrendData();
+  const topCategories = getTopCategories();
+
+  // Color palette for category lines
+  const categoryColors = [
+    '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', 
+    '#06b6d4', '#84cc16', '#f97316', '#ec4899', '#6366f1'
+  ];
+
   const getHealthScoreColor = (score: number) => {
     if (score >= 80) return 'text-green-600 bg-green-50';
     if (score >= 60) return 'text-blue-600 bg-blue-50';
@@ -308,7 +419,7 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
       <div className="container mx-auto px-4 py-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-primary mb-2">
-            Financial Analytics
+            Analytics
           </h1>
           <p className="text-muted-foreground">Deep insights into your spending behavior and financial patterns</p>
         </div>
@@ -655,71 +766,339 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
             </Card>
           </TabsContent>
 
-          {/* TRENDS TAB - Enhanced Category Analysis */}
+          {/* TRENDS TAB - Enhanced with Line Graphs */}
           <TabsContent value="trends" className="space-y-6">
             <div className="mb-4">
-              <h2 className="text-xl font-semibold">Category Trends Analysis</h2>
+              <h2 className="text-xl font-semibold">Financial Trends Over Time</h2>
               <p className="text-sm text-muted-foreground">
-                Compare {new Date(selectedMonth + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} vs {new Date(previousMonth + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                Track your financial patterns and spending categories across all months
               </p>
             </div>
 
+            {/* Overall Financial Trends */}
             <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
               <CardHeader>
-                <CardTitle>Category Trends (Month-over-Month)</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5" />
+                  Income vs Expenses Trend
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {categoryTrends.slice(0, 8).map((trend) => (
-                    <div key={trend.category} className="space-y-2">
-                      <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-sm">{trend.category}</span>
-                          {trend.trend === 'up' && <TrendingUp className="h-3 w-3 text-red-500" />}
-                          {trend.trend === 'down' && <TrendingDown className="h-3 w-3 text-green-500" />}
-                          {trend.trend === 'stable' && <Activity className="h-3 w-3 text-gray-500" />}
-                        </div>
-                        <div className="text-right">
-                          <div className="text-sm font-medium">${trend.currentMonth.toLocaleString()}</div>
-                          <div className={`text-xs ${
-                            trend.changePercent > 0 ? 'text-red-600' : 
-                            trend.changePercent < 0 ? 'text-green-600' : 'text-gray-600'
-                          }`}>
-                            {trend.changePercent > 0 ? '+' : ''}{trend.changePercent.toFixed(1)}%
-                          </div>
-                        </div>
-                      </div>
+                {monthlyTrendData.length >= 2 ? (
+                  <div className="h-80">
+                    <svg width="100%" height="100%" viewBox="0 0 800 320" className="border rounded">
+                      {/* Grid */}
+                      <defs>
+                        <pattern id="grid" width="40" height="32" patternUnits="userSpaceOnUse">
+                          <path d="M 40 0 L 0 0 0 32" fill="none" stroke="#e5e7eb" strokeWidth="1" opacity="0.3"/>
+                        </pattern>
+                      </defs>
+                      <rect width="100%" height="100%" fill="url(#grid)" />
                       
-                      <div className="flex h-4 bg-gray-200 rounded overflow-hidden">
-                        <div 
-                          className="bg-gray-400 transition-all duration-300"
-                          style={{ width: `${trend.previousMonth > 0 && trend.currentMonth > 0 ? (trend.previousMonth / (trend.previousMonth + trend.currentMonth)) * 100 : 50}%` }}
-                        />
-                        <div 
-                          className={`transition-all duration-300 ${
-                            trend.currentMonth > trend.previousMonth ? 'bg-red-500' : 
-                            trend.currentMonth < trend.previousMonth ? 'bg-green-500' : 'bg-blue-500'
-                          }`}
-                          style={{ width: `${trend.previousMonth > 0 && trend.currentMonth > 0 ? (trend.currentMonth / (trend.previousMonth + trend.currentMonth)) * 100 : 50}%` }}
-                        />
+                      {/* Calculate scales */}
+                      {(() => {
+                        const maxValue = Math.max(...monthlyTrendData.flatMap(d => [d.totalIncome, d.totalExpenses, Math.abs(d.netSavings)]));
+                        const minValue = Math.min(...monthlyTrendData.map(d => d.netSavings));
+                        const xStep = 720 / (monthlyTrendData.length - 1);
+                        const yScale = 260 / (maxValue - Math.min(minValue, 0));
+                        const yOffset = Math.max(-minValue * yScale, 0);
+                        
+                        // Generate path data
+                        const incomePath = monthlyTrendData.map((d, i) => `${i === 0 ? 'M' : 'L'} ${40 + i * xStep} ${280 - (d.totalIncome * yScale) + yOffset}`).join(' ');
+                        const expensePath = monthlyTrendData.map((d, i) => `${i === 0 ? 'M' : 'L'} ${40 + i * xStep} ${280 - (d.totalExpenses * yScale) + yOffset}`).join(' ');
+                        const savingsPath = monthlyTrendData.map((d, i) => `${i === 0 ? 'M' : 'L'} ${40 + i * xStep} ${280 - (d.netSavings * yScale) + yOffset}`).join(' ');
+                        
+                        return (
+                          <>
+                            {/* Lines */}
+                            <path d={incomePath} fill="none" stroke="#10b981" strokeWidth="3" />
+                            <path d={expensePath} fill="none" stroke="#ef4444" strokeWidth="3" />
+                            <path d={savingsPath} fill="none" stroke="#3b82f6" strokeWidth="3" />
+                            
+                            {/* Dots */}
+                            {monthlyTrendData.map((d, i) => (
+                              <g key={i}>
+                                <circle cx={40 + i * xStep} cy={280 - (d.totalIncome * yScale) + yOffset} r="5" fill="#10b981" />
+                                <circle cx={40 + i * xStep} cy={280 - (d.totalExpenses * yScale) + yOffset} r="5" fill="#ef4444" />
+                                <circle cx={40 + i * xStep} cy={280 - (d.netSavings * yScale) + yOffset} r="5" fill="#3b82f6" />
+                              </g>
+                            ))}
+                            
+                            {/* X-axis labels */}
+                            {monthlyTrendData.map((d, i) => (
+                              <text key={i} x={0 + i * xStep} y={310} textAnchor="middle" className="text-xs fill-gray-600">
+                                {d.monthLabel}
+                              </text>
+                            ))}
+                            
+                            {/* Y-axis labels */}
+                            {[0, maxValue * 0.25, maxValue * 0.5, maxValue * 0.75, maxValue].map((value, i) => (
+                              <text key={i} x="30" y={290 - i * 65} textAnchor="end" className="text-xs fill-gray-600">
+                                ${(value / 1000).toFixed(0)}k
+                              </text>
+                            ))}
+                          </>
+                        );
+                      })()}
+                    </svg>
+                    
+                    {/* Legend */}
+                    <div className="flex justify-center gap-6 mt-0.5">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 bg-green-500 rounded"></div>
+                        <span className="text-sm">Income</span>
                       </div>
-                      
-                      <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>Previous month: ${trend.previousMonth.toLocaleString()}</span>
-                        <span>Change: ${trend.change >= 0 ? '+' : ''}${trend.change.toLocaleString()}</span>
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 bg-red-500 rounded"></div>
+                        <span className="text-sm">Expenses</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 bg-blue-500 rounded"></div>
+                        <span className="text-sm">Net Savings</span>
                       </div>
                     </div>
-                  ))}
-                </div>
-
-                {categoryTrends.length === 0 && (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <p>No category trends available</p>
-                    <p className="text-sm">Need at least 2 months of data to show trends</p>
+                  </div>
+                ) : (
+                  <div className="h-80 flex items-center justify-center text-muted-foreground">
+                    <div className="text-center">
+                      <TrendingUp className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                      <p className="text-lg font-medium">Need More Data</p>
+                      <p className="text-sm">Add transactions for at least 2 months to see trends</p>
+                    </div>
                   </div>
                 )}
               </CardContent>
             </Card>
+
+            {/* Category Spending Trends */}
+            <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5" />
+                  Category Spending Trends
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {categoryTrendData.length >= 2 && topCategories.length > 0 ? (
+                  <div className="h-80">
+                    <svg width="100%" height="100%" viewBox="0 0 800 320" className="border rounded">
+                      {/* Grid */}
+                      <rect width="100%" height="100%" fill="url(#grid)" />
+                      
+                      {/* Calculate scales */}
+                      {(() => {
+                        const maxValue = Math.max(...topCategories.flatMap(cat => 
+                          categoryTrendData.map(d => d[cat] as number || 0)
+                        ));
+                        if (maxValue === 0) return null;
+                        
+                        const xStep = 720 / (categoryTrendData.length - 1);
+                        const yScale = 260 / maxValue;
+                        
+                        return (
+                          <>
+                            {/* Category Lines */}
+                            {topCategories.map((category, catIndex) => {
+                              const path = categoryTrendData.map((d, i) => {
+                                const value = d[category] as number || 0;
+                                return `${i === 0 ? 'M' : 'L'} ${40 + i * xStep} ${280 - (value * yScale)}`;
+                              }).join(' ');
+                              
+                              return (
+                                <g key={category}>
+                                  <path 
+                                    d={path} 
+                                    fill="none" 
+                                    stroke={categoryColors[catIndex % categoryColors.length]} 
+                                    strokeWidth="2.5" 
+                                  />
+                                  {/* Dots */}
+                                  {categoryTrendData.map((d, i) => {
+                                    const value = d[category] as number || 0;
+                                    return value > 0 ? (
+                                      <circle 
+                                        key={i}
+                                        cx={40 + i * xStep} 
+                                        cy={280 - (value * yScale)} 
+                                        r="4" 
+                                        fill={categoryColors[catIndex % categoryColors.length]} 
+                                      />
+                                    ) : null;
+                                  })}
+                                </g>
+                              );
+                            })}
+                            
+                            {/* X-axis labels */}
+                            {categoryTrendData.map((d, i) => (
+                              <text key={i} x={40 + i * xStep} y={310} textAnchor="middle" className="text-xs fill-gray-600">
+                                {d.monthLabel}
+                              </text>
+                            ))}
+                            
+                            {/* Y-axis labels */}
+                            {[0, maxValue * 0.25, maxValue * 0.5, maxValue * 0.75, maxValue].map((value, i) => (
+                              <text key={i} x="30" y={290 - i * 65} textAnchor="end" className="text-xs fill-gray-600">
+                                ${(value / 1000).toFixed(0)}k
+                              </text>
+                            ))}
+                          </>
+                        );
+                      })()}
+                    </svg>
+                    
+                    {/* Legend */}
+                    <div className="flex flex-wrap justify-center gap-4 mt-0.5">
+                      {topCategories.map((category, index) => (
+                        <div key={category} className="flex items-center gap-2">
+                          <div 
+                            className="w-3 h-3 rounded" 
+                            style={{ backgroundColor: categoryColors[index % categoryColors.length] }}
+                          ></div>
+                          <span className="text-sm">{category}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="h-80 flex items-center justify-center text-muted-foreground">
+                    <div className="text-center">
+                      <BarChart3 className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                      <p className="text-lg font-medium">Need More Data</p>
+                      <p className="text-sm">Add expense transactions across multiple months to see category trends</p>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Trend Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+                <CardHeader>
+                  <CardTitle className="text-lg">Trend Overview</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <div className="flex justify-between">
+                      <span className="text-sm">Data Points:</span>
+                      <span className="font-medium">{monthlyTrendData.length} months</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm">Avg Income:</span>
+                      <span className="font-medium text-green-600">
+                        ${monthlyTrendData.length > 0 ? 
+                          (monthlyTrendData.reduce((sum, m) => sum + m.totalIncome, 0) / monthlyTrendData.length).toFixed(0) : 
+                          '0'
+                        }
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm">Avg Expenses:</span>
+                      <span className="font-medium text-red-600">
+                        ${monthlyTrendData.length > 0 ? 
+                          (monthlyTrendData.reduce((sum, m) => sum + m.totalExpenses, 0) / monthlyTrendData.length).toFixed(0) : 
+                          '0'
+                        }
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm">Avg Savings:</span>
+                      <span className="font-medium text-blue-600">
+                        ${monthlyTrendData.length > 0 ? 
+                          (monthlyTrendData.reduce((sum, m) => sum + m.netSavings, 0) / monthlyTrendData.length).toFixed(0) : 
+                          '0'
+                        }
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+                <CardHeader>
+                  <CardTitle className="text-lg">Best Performance</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {monthlyTrendData.length > 0 ? (
+                    <div className="space-y-3">
+                      {(() => {
+                        const bestSavingsMonth = monthlyTrendData.reduce((best, current) => 
+                          current.netSavings > best.netSavings ? current : best
+                        );
+                        return (
+                          <>
+                            <div className="text-center">
+                              <div className="text-2xl font-bold text-green-600">
+                                {bestSavingsMonth.monthLabel}
+                              </div>
+                              <div className="text-sm text-muted-foreground">Best Savings Month</div>
+                            </div>
+                            <div className="space-y-2 text-sm">
+                              <div className="flex justify-between">
+                                <span>Savings:</span>
+                                <span className="font-medium text-green-600">${bestSavingsMonth.netSavings.toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Income:</span>
+                                <span className="font-medium">${bestSavingsMonth.totalIncome.toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Expenses:</span>
+                                <span className="font-medium">${bestSavingsMonth.totalExpenses.toLocaleString()}</span>
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  ) : (
+                    <div className="text-center py-4 text-muted-foreground">
+                      <p className="text-sm">No data available</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+                <CardHeader>
+                  <CardTitle className="text-lg">Category Insights</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {topCategories.length > 0 ? (
+                    <div className="space-y-3">
+                      <div className="text-center">
+                        <div className="text-lg font-bold text-primary">Top {Math.min(topCategories.length, 6)}</div>
+                        <div className="text-sm text-muted-foreground">Spending Categories</div>
+                      </div>
+                      <div className="space-y-2">
+                        {topCategories.slice(0, 4).map((category, index) => {
+                          const totalSpent = transactions
+                            .filter(t => t.type === 'expense' && t.category === category)
+                            .reduce((sum, t) => sum + t.amount, 0);
+                          return (
+                            <div key={category} className="flex items-center gap-2">
+                              <div 
+                                className="w-3 h-3 rounded-full" 
+                                style={{ backgroundColor: categoryColors[index % categoryColors.length] }}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium truncate">{category}</div>
+                                <div className="text-xs text-muted-foreground">${totalSpent.toLocaleString()} total</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-4 text-muted-foreground">
+                      <p className="text-sm">No category data</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </div>
