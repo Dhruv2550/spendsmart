@@ -4,6 +4,7 @@ import Dashboard from "./Dashboard";
 import AnalyticsPage from "./AnalyticsPage";
 import SettingsPage from "./SettingsPage";
 import GoalsPage from "./GoalsPage";
+import RecurringTransactionsPage from "./RecurringTransactionsPage";
 
 const AppLayout = () => {
   const [currentPage, setCurrentPage] = useState("dashboard");
@@ -22,6 +23,9 @@ const AppLayout = () => {
       case "analytics":
         console.log("Rendering analytics"); // Debug line
         return <AnalyticsPage monthlySavings={sharedBudget} />;
+      case "recurring":
+        console.log("Rendering recurring"); // Debug line
+        return <RecurringTransactionsPage />;
       case "settings":
         console.log("Rendering settings"); // Debug line
         return <SettingsPage 

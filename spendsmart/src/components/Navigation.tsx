@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button } from "./ui/button";
-import { Home, BarChart3, Settings, Menu, X, TrendingUp } from "lucide-react";
+import { Home, BarChart3, Settings, Menu, X, TrendingUp, Repeat } from "lucide-react";
 import { cn } from "../lib/utils";
 
 interface NavigationProps {
@@ -13,8 +13,9 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
 
   const navigation = [
     { id: "dashboard", label: "Dashboard", icon: Home },
-        { id: "analytics", label: "Analytics", icon: BarChart3 },
+    { id: "recurring", label: "Recurring", icon: Repeat },
     { id: "goals", label: "Goals", icon: TrendingUp },
+    { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "settings", label: "Settings", icon: Settings }
   ];
 

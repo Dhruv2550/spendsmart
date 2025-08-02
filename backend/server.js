@@ -20,7 +20,9 @@ const initializeServer = async () => {
   }
 };
 
-// Routes
+// ============================================
+// TRANSACTION ROUTES
+// ============================================
 
 // Get all records
 app.get('/api/records', async (req, res) => {
@@ -162,14 +164,200 @@ app.get('/api/summary/:month', async (req, res) => {
   }
 });
 
+// ============================================
+// RECURRING TRANSACTIONS ROUTES
+// ============================================
+
+// Get all recurring transactions
+app.get('/api/recurring', async (req, res) => {
+  try {
+    const recurringTransactions = await db.getAllRecurringTransactions();
+    res.json(recurringTransactions);
+  } catch (error) {
+    console.error('Error getting recurring transactions:', error);
+    res.status(500).json({ error: 'Failed to retrieve recurring transactions' });
+  }
+});
+
+// Create new recurring transaction
+app.post('/api/recurring', async (req, res) => {
+  try {
+    const { name, type, category, amount, note, frequency, start_date, end_date } = req.body;
+    
+    // Validate required fields
+    if (!name || !type || !category || !amount || !frequency || !start_date) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: name, type, category, amount, frequency, start_date' 
+      });
+    }
+    
+    // Validate type and frequency
+    if (!['income', 'expense'].includes(type)) {
+      return res.status(400).json({ error: 'Type must be either "income" or "expense"' });
+    }
+    
+    if (!['weekly', 'monthly', 'quarterly', 'yearly'].includes(frequency)) {
+      return res.status(400).json({ error: 'Invalid frequency' });
+    }
+    
+    const newRecurringTransaction = {
+      name,
+      type,
+      category,
+      amount: parseFloat(amount),
+      note: note || '',
+      frequency,
+      start_date,
+      end_date: end_date || null,
+      next_due_date: start_date, // First occurrence
+      is_active: true
+    };
+    
+    const createdRecurring = await db.createRecurringTransaction(newRecurringTransaction);
+    res.status(201).json(createdRecurring);
+  } catch (error) {
+    console.error('Error creating recurring transaction:', error);
+    res.status(500).json({ error: 'Failed to create recurring transaction' });
+  }
+});
+
+// Update recurring transaction
+app.put('/api/recurring/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { name, type, category, amount, note, frequency, start_date, end_date, is_active, next_due_date } = req.body;
+    
+    // Validate required fields
+    if (!name || !type || !category || !amount || !frequency || !start_date) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: name, type, category, amount, frequency, start_date' 
+      });
+    }
+    
+    const updatedRecurringTransaction = {
+      name,
+      type,
+      category,
+      amount: parseFloat(amount),
+      note: note || '',
+      frequency,
+      start_date,
+      end_date: end_date || null,
+      next_due_date: next_due_date || start_date,
+      is_active: is_active !== undefined ? is_active : true
+    };
+    
+    const result = await db.updateRecurringTransaction(id, updatedRecurringTransaction);
+    res.json(result);
+  } catch (error) {
+    console.error('Error updating recurring transaction:', error);
+    if (error.message === 'Recurring transaction not found') {
+      res.status(404).json({ error: 'Recurring transaction not found' });
+    } else {
+      res.status(500).json({ error: 'Failed to update recurring transaction' });
+    }
+  }
+});
+
+// Delete recurring transaction
+app.delete('/api/recurring/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    
+    await db.deleteRecurringTransaction(id);
+    res.json({ message: 'Recurring transaction deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting recurring transaction:', error);
+    if (error.message === 'Recurring transaction not found') {
+      res.status(404).json({ error: 'Recurring transaction not found' });
+    } else {
+      res.status(500).json({ error: 'Failed to delete recurring transaction' });
+    }
+  }
+});
+
+// Process recurring transactions (manual trigger)
+app.post('/api/recurring/process', async (req, res) => {
+  try {
+    const processed = await db.processRecurringTransactions();
+    res.json({ 
+      message: `Processed ${processed.length} recurring transactions`,
+      processed 
+    });
+  } catch (error) {
+    console.error('Error processing recurring transactions:', error);
+    res.status(500).json({ error: 'Failed to process recurring transactions' });
+  }
+});
+
+// Toggle recurring transaction active status
+app.patch('/api/recurring/:id/toggle', async (req, res) => {
+  try {
+    const id = req.params.id;
+    
+    // Get current transaction
+    const current = await db.getRecurringTransactionById(id);
+    if (!current) {
+      return res.status(404).json({ error: 'Recurring transaction not found' });
+    }
+    
+    // Toggle active status
+    const updated = await db.updateRecurringTransaction(id, {
+      ...current,
+      is_active: !current.is_active
+    });
+    
+    res.json(updated);
+  } catch (error) {
+    console.error('Error toggling recurring transaction:', error);
+    res.status(500).json({ error: 'Failed to toggle recurring transaction' });
+  }
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
+// ============================================
+// BACKGROUND PROCESSING
+// ============================================
+
+let recurringProcessInterval;
+
+// Start background processing
+const startRecurringProcessor = () => {
+  // Process recurring transactions every hour
+  recurringProcessInterval = setInterval(async () => {
+    try {
+      console.log('🔄 Checking for due recurring transactions...');
+      const processed = await db.processRecurringTransactions();
+      
+      if (processed.length > 0) {
+        console.log(`✅ Auto-processed ${processed.length} recurring transactions`);
+      }
+    } catch (error) {
+      console.error('❌ Error in recurring transaction processor:', error);
+    }
+  }, 60 * 60 * 1000); // Run every hour
+  
+  console.log('🤖 Recurring transaction processor started');
+};
+
+// Stop background processing
+const stopRecurringProcessor = () => {
+  if (recurringProcessInterval) {
+    clearInterval(recurringProcessInterval);
+    console.log('🛑 Recurring transaction processor stopped');
+  }
+};
+
 // Start server
 const startServer = async () => {
   await initializeServer();
+  
+  // Start recurring transaction processor
+  startRecurringProcessor();
   
   app.listen(PORT, () => {
     console.log(`SpendSmart Backend running on http://localhost:${PORT}`);
@@ -180,17 +368,25 @@ const startServer = async () => {
     console.log(`   DELETE /api/records/:id - Delete record`);
     console.log(`   GET    /api/summary/:month - Get monthly summary`);
     console.log(`   GET    /api/health - Health check`);
+    console.log(`   GET    /api/recurring - Get all recurring transactions`);
+    console.log(`   POST   /api/recurring - Add new recurring transaction`);
+    console.log(`   PUT    /api/recurring/:id - Update recurring transaction`);
+    console.log(`   DELETE /api/recurring/:id - Delete recurring transaction`);
+    console.log(`   POST   /api/recurring/process - Process due recurring transactions`);
+    console.log(`   PATCH  /api/recurring/:id/toggle - Toggle recurring transaction`);
   });
 };
 
 // Handle graceful shutdown
 process.on('SIGINT', () => {
   console.log('Shutting down gracefully...');
+  stopRecurringProcessor();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
   console.log('Shutting down gracefully...');
+  stopRecurringProcessor();
   process.exit(0);
 });
 

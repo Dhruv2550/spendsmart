@@ -38,7 +38,18 @@ const db = {
   
   // Analytics methods
   getTransactionsByMonth: (month) => database.getTransactionsByMonth(month),
-  getTransactionsByDateRange: (startDate, endDate) => database.getTransactionsByDateRange(startDate, endDate)
+  getTransactionsByDateRange: (startDate, endDate) => database.getTransactionsByDateRange(startDate, endDate),
+  
+  // Recurring transaction methods
+  getAllRecurringTransactions: () => database.getAllRecurringTransactions(),
+  getRecurringTransactionById: (id) => database.getRecurringTransactionById(id),
+  createRecurringTransaction: (recurring) => database.createRecurringTransaction(recurring),
+  updateRecurringTransaction: (id, recurring) => database.updateRecurringTransaction(id, recurring),
+  deleteRecurringTransaction: (id) => database.deleteRecurringTransaction(id),
+  getDueRecurringTransactions: () => database.getDueRecurringTransactions(),
+  processRecurringTransactions: () => database.processRecurringTransactions(),
+  calculateNextDueDate: (date, frequency) => database.calculateNextDueDate(date, frequency),
+  updateNextDueDate: (id, date) => database.updateNextDueDate(id, date)
 };
 
 module.exports = db;
