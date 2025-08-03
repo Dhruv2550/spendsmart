@@ -66,7 +66,32 @@ const init = () => {
               reject(err);
             } else {
               console.log('Recurring transactions table ready');
-              resolve();
+              
+              // Create envelope budgets table
+              const createEnvelopeTableQuery = `
+                CREATE TABLE IF NOT EXISTS envelope_budgets (
+                  id TEXT PRIMARY KEY,
+                  template_name TEXT NOT NULL,
+                  category TEXT NOT NULL,
+                  budget_amount REAL NOT NULL,
+                  month TEXT NOT NULL,
+                  rollover_enabled INTEGER DEFAULT 0,
+                  rollover_amount REAL DEFAULT 0,
+                  is_active INTEGER DEFAULT 1,
+                  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                  UNIQUE(template_name, category, month)
+                )
+              `;
+              
+              db.run(createEnvelopeTableQuery, (err) => {
+                if (err) {
+                  console.error('Error creating envelope_budgets table:', err);
+                  reject(err);
+                } else {
+                  console.log('Envelope budgets table ready');
+                  resolve();
+                }
+              });
             }
           });
         }
@@ -535,6 +560,230 @@ const processRecurringTransactions = async () => {
   }
 };
 
+// ============================================
+// ENVELOPE BUDGETING FUNCTIONS
+// ============================================
+
+// Get all envelope budgets for a specific month and template
+const getEnvelopeBudgets = (templateName, month) => {
+  return new Promise((resolve, reject) => {
+    const query = `
+      SELECT * FROM envelope_budgets 
+      WHERE template_name = ? AND month = ? AND is_active = 1
+      ORDER BY category ASC
+    `;
+    
+    db.all(query, [templateName, month], (err, rows) => {
+      if (err) {
+        console.error('Error getting envelope budgets:', err);
+        reject(err);
+      } else {
+        const budgets = rows.map(row => ({
+          ...row,
+          budget_amount: parseFloat(row.budget_amount),
+          rollover_amount: parseFloat(row.rollover_amount || 0),
+          rollover_enabled: Boolean(row.rollover_enabled),
+          is_active: Boolean(row.is_active)
+        }));
+        console.log(`Retrieved ${budgets.length} envelope budgets for ${templateName}/${month}`);
+        resolve(budgets);
+      }
+    });
+  });
+};
+
+// Get all budget templates
+const getBudgetTemplates = () => {
+  return new Promise((resolve, reject) => {
+    const query = `
+      SELECT DISTINCT template_name, 
+             COUNT(*) as category_count,
+             SUM(budget_amount) as total_budget,
+             MAX(created_at) as last_updated
+      FROM envelope_budgets 
+      WHERE is_active = 1 
+      GROUP BY template_name 
+      ORDER BY last_updated DESC
+    `;
+    
+    db.all(query, [], (err, rows) => {
+      if (err) {
+        console.error('Error getting budget templates:', err);
+        reject(err);
+      } else {
+        const templates = rows.map(row => ({
+          ...row,
+          total_budget: parseFloat(row.total_budget)
+        }));
+        console.log(`Retrieved ${templates.length} budget templates`);
+        resolve(templates);
+      }
+    });
+  });
+};
+
+// Create or update envelope budget
+const upsertEnvelopeBudget = (envelopeBudget) => {
+  return new Promise((resolve, reject) => {
+    const id = uuidv4();
+    
+    const query = `
+      INSERT OR REPLACE INTO envelope_budgets 
+      (id, template_name, category, budget_amount, month, rollover_enabled, rollover_amount, is_active)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+    
+    const values = [
+      id,
+      envelopeBudget.template_name,
+      envelopeBudget.category,
+      parseFloat(envelopeBudget.budget_amount),
+      envelopeBudget.month,
+      envelopeBudget.rollover_enabled ? 1 : 0,
+      parseFloat(envelopeBudget.rollover_amount || 0),
+      envelopeBudget.is_active ? 1 : 0
+    ];
+    
+    db.run(query, values, function(err) {
+      if (err) {
+        console.error('Error upserting envelope budget:', err);
+        reject(err);
+      } else {
+        const newEnvelopeBudget = {
+          id,
+          ...envelopeBudget,
+          budget_amount: parseFloat(envelopeBudget.budget_amount),
+          rollover_amount: parseFloat(envelopeBudget.rollover_amount || 0),
+          rollover_enabled: Boolean(envelopeBudget.rollover_enabled),
+          is_active: Boolean(envelopeBudget.is_active)
+        };
+        console.log('Upserted envelope budget:', newEnvelopeBudget.id);
+        resolve(newEnvelopeBudget);
+      }
+    });
+  });
+};
+
+// Create multiple envelope budgets from template
+const createBudgetFromTemplate = (templateName, month, budgets) => {
+  return new Promise((resolve, reject) => {
+    const insertPromises = budgets.map(budget => {
+      return upsertEnvelopeBudget({
+        template_name: templateName,
+        category: budget.category,
+        budget_amount: budget.budget_amount,
+        month: month,
+        rollover_enabled: budget.rollover_enabled || false,
+        rollover_amount: budget.rollover_amount || 0,
+        is_active: true
+      });
+    });
+    
+    Promise.all(insertPromises)
+      .then(results => {
+        console.log(`Created budget template ${templateName} for ${month} with ${results.length} categories`);
+        resolve(results);
+      })
+      .catch(reject);
+  });
+};
+
+// Delete budget template
+const deleteBudgetTemplate = (templateName) => {
+  return new Promise((resolve, reject) => {
+    const query = 'UPDATE envelope_budgets SET is_active = 0 WHERE template_name = ?';
+    
+    db.run(query, [templateName], function(err) {
+      if (err) {
+        console.error('Error deleting budget template:', err);
+        reject(err);
+      } else {
+        console.log('Deleted budget template:', templateName);
+        resolve({ success: true, changes: this.changes });
+      }
+    });
+  });
+};
+
+// Get budget vs actual spending for a month - FIXED to show all expense categories
+const getBudgetVsActual = (templateName, month) => {
+  return new Promise((resolve, reject) => {
+    // First get actual spending for that month (ALL categories)
+    const spendingQuery = `
+      SELECT category, SUM(amount) as actual_spent
+      FROM transactions 
+      WHERE type = 'expense' AND date LIKE ? 
+      GROUP BY category
+      ORDER BY category ASC
+    `;
+    
+    db.all(spendingQuery, [`${month}%`], (err, spendingRows) => {
+      if (err) {
+        console.error('Error getting actual spending:', err);
+        reject(err);
+      } else {
+        // Create spending map
+        const spendingMap = {};
+        spendingRows.forEach(row => {
+          spendingMap[row.category] = parseFloat(row.actual_spent);
+        });
+        
+        // Then get the budget allocations
+        getEnvelopeBudgets(templateName, month)
+          .then(budgets => {
+            // Create budget map
+            const budgetMap = {};
+            budgets.forEach(budget => {
+              budgetMap[budget.category] = {
+                budget_amount: budget.budget_amount,
+                rollover_enabled: budget.rollover_enabled,
+                rollover_amount: budget.rollover_amount
+              };
+            });
+            
+            // Get all unique categories (from both spending and budgets)
+            const allCategories = new Set([
+              ...Object.keys(spendingMap),
+              ...Object.keys(budgetMap)
+            ]);
+            
+            // Create comprehensive budget vs actual analysis
+            const budgetVsActual = Array.from(allCategories).map(category => {
+              const budgetInfo = budgetMap[category] || { 
+                budget_amount: 0, 
+                rollover_enabled: false, 
+                rollover_amount: 0 
+              };
+              const actualSpent = spendingMap[category] || 0;
+              const budgetAmount = budgetInfo.budget_amount;
+              
+              return {
+                category,
+                budgeted: budgetAmount,
+                actual: actualSpent,
+                remaining: budgetAmount - actualSpent,
+                percentage: budgetAmount > 0 ? (actualSpent / budgetAmount) * 100 : (actualSpent > 0 ? Infinity : 0),
+                rollover_enabled: budgetInfo.rollover_enabled,
+                rollover_amount: budgetInfo.rollover_amount,
+                has_budget: budgetAmount > 0,
+                unbudgeted_spending: budgetAmount === 0 && actualSpent > 0
+              };
+            }).sort((a, b) => {
+              // Sort: budgeted categories first, then unbudgeted, all by spending amount desc
+              if (a.has_budget && !b.has_budget) return -1;
+              if (!a.has_budget && b.has_budget) return 1;
+              return b.actual - a.actual;
+            });
+            
+            console.log(`Generated comprehensive budget vs actual for ${templateName}/${month}`);
+            resolve(budgetVsActual);
+          })
+          .catch(reject);
+      }
+    });
+  });
+};
+
 module.exports = {
   init,
   getAllTransactions,
@@ -553,5 +802,12 @@ module.exports = {
   getDueRecurringTransactions,
   processRecurringTransactions,
   calculateNextDueDate,
-  updateNextDueDate
+  updateNextDueDate,
+  // Envelope budgeting methods
+  getEnvelopeBudgets,
+  getBudgetTemplates,
+  upsertEnvelopeBudget,
+  createBudgetFromTemplate,
+  deleteBudgetTemplate,
+  getBudgetVsActual
 };

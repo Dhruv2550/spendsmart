@@ -314,6 +314,200 @@ app.patch('/api/recurring/:id/toggle', async (req, res) => {
   }
 });
 
+// ============================================
+// ENVELOPE BUDGETING ROUTES
+// ============================================
+
+// Get envelope budgets for a specific template and month
+app.get('/api/budgets/:templateName/:month', async (req, res) => {
+  try {
+    const { templateName, month } = req.params;
+    
+    // Validate month format
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ error: 'Invalid month format. Use YYYY-MM' });
+    }
+    
+    const budgets = await db.getEnvelopeBudgets(templateName, month);
+    res.json(budgets);
+  } catch (error) {
+    console.error('Error getting envelope budgets:', error);
+    res.status(500).json({ error: 'Failed to retrieve envelope budgets' });
+  }
+});
+
+// Get all budget templates
+app.get('/api/budget-templates', async (req, res) => {
+  try {
+    const templates = await db.getBudgetTemplates();
+    res.json(templates);
+  } catch (error) {
+    console.error('Error getting budget templates:', error);
+    res.status(500).json({ error: 'Failed to retrieve budget templates' });
+  }
+});
+
+// Create or update envelope budget
+app.post('/api/budgets', async (req, res) => {
+  try {
+    const { template_name, category, budget_amount, month, rollover_enabled, rollover_amount } = req.body;
+    
+    // Validate required fields
+    if (!template_name || !category || !budget_amount || !month) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: template_name, category, budget_amount, month' 
+      });
+    }
+    
+    // Validate month format
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ error: 'Invalid month format. Use YYYY-MM' });
+    }
+    
+    const envelopeBudget = {
+      template_name,
+      category,
+      budget_amount: parseFloat(budget_amount),
+      month,
+      rollover_enabled: rollover_enabled || false,
+      rollover_amount: parseFloat(rollover_amount || 0),
+      is_active: true
+    };
+    
+    const created = await db.upsertEnvelopeBudget(envelopeBudget);
+    res.status(201).json(created);
+  } catch (error) {
+    console.error('Error creating envelope budget:', error);
+    res.status(500).json({ error: 'Failed to create envelope budget' });
+  }
+});
+
+// Create budget template with multiple categories
+app.post('/api/budget-templates', async (req, res) => {
+  try {
+    const { template_name, month, budgets } = req.body;
+    
+    // Validate required fields
+    if (!template_name || !month || !budgets || !Array.isArray(budgets)) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: template_name, month, budgets (array)' 
+      });
+    }
+    
+    // Validate month format
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ error: 'Invalid month format. Use YYYY-MM' });
+    }
+    
+    // Validate budgets array
+    for (const budget of budgets) {
+      if (!budget.category || !budget.budget_amount) {
+        return res.status(400).json({ 
+          error: 'Each budget must have category and budget_amount' 
+        });
+      }
+    }
+    
+    const created = await db.createBudgetFromTemplate(template_name, month, budgets);
+    res.status(201).json({ 
+      message: `Created budget template ${template_name} for ${month}`,
+      budgets: created 
+    });
+  } catch (error) {
+    console.error('Error creating budget template:', error);
+    res.status(500).json({ error: 'Failed to create budget template' });
+  }
+});
+
+// Delete budget template
+app.delete('/api/budget-templates/:templateName', async (req, res) => {
+  try {
+    const { templateName } = req.params;
+    
+    const result = await db.deleteBudgetTemplate(templateName);
+    res.json({ 
+      message: `Budget template ${templateName} deleted successfully`,
+      changes: result.changes 
+    });
+  } catch (error) {
+    console.error('Error deleting budget template:', error);
+    res.status(500).json({ error: 'Failed to delete budget template' });
+  }
+});
+
+// Get budget vs actual analysis
+app.get('/api/budget-analysis/:templateName/:month', async (req, res) => {
+  try {
+    const { templateName, month } = req.params;
+    
+    // Validate month format
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ error: 'Invalid month format. Use YYYY-MM' });
+    }
+    
+    const analysis = await db.getBudgetVsActual(templateName, month);
+    
+    // Calculate summary statistics
+    const totalBudgeted = analysis.reduce((sum, item) => sum + item.budgeted, 0);
+    const totalActual = analysis.reduce((sum, item) => sum + item.actual, 0);
+    const totalRemaining = analysis.reduce((sum, item) => sum + item.remaining, 0);
+    const overBudgetCategories = analysis.filter(item => item.actual > item.budgeted).length;
+    
+    res.json({
+      analysis,
+      summary: {
+        totalBudgeted,
+        totalActual,
+        totalRemaining,
+        overBudgetCategories,
+        budgetUtilization: totalBudgeted > 0 ? (totalActual / totalBudgeted) * 100 : 0
+      }
+    });
+  } catch (error) {
+    console.error('Error getting budget analysis:', error);
+    res.status(500).json({ error: 'Failed to retrieve budget analysis' });
+  }
+});
+
+// Copy budget template to new month
+app.post('/api/budget-templates/:templateName/copy', async (req, res) => {
+  try {
+    const { templateName } = req.params;
+    const { source_month, target_month, apply_rollover } = req.body;
+    
+    if (!source_month || !target_month) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: source_month, target_month' 
+      });
+    }
+    
+    // Get source budget
+    const sourceBudgets = await db.getEnvelopeBudgets(templateName, source_month);
+    
+    if (sourceBudgets.length === 0) {
+      return res.status(404).json({ error: 'Source budget template not found' });
+    }
+    
+    // Prepare budgets for new month
+    const newBudgets = sourceBudgets.map(budget => ({
+      category: budget.category,
+      budget_amount: budget.budget_amount,
+      rollover_enabled: budget.rollover_enabled,
+      rollover_amount: apply_rollover && budget.rollover_enabled ? budget.rollover_amount : 0
+    }));
+    
+    const created = await db.createBudgetFromTemplate(templateName, target_month, newBudgets);
+    
+    res.status(201).json({ 
+      message: `Copied budget template ${templateName} from ${source_month} to ${target_month}`,
+      budgets: created 
+    });
+  } catch (error) {
+    console.error('Error copying budget template:', error);
+    res.status(500).json({ error: 'Failed to copy budget template' });
+  }
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
@@ -374,6 +568,13 @@ const startServer = async () => {
     console.log(`   DELETE /api/recurring/:id - Delete recurring transaction`);
     console.log(`   POST   /api/recurring/process - Process due recurring transactions`);
     console.log(`   PATCH  /api/recurring/:id/toggle - Toggle recurring transaction`);
+    console.log(`   GET    /api/budgets/:template/:month - Get envelope budgets`);
+    console.log(`   POST   /api/budgets - Create/update envelope budget`);
+    console.log(`   GET    /api/budget-templates - Get all budget templates`);
+    console.log(`   POST   /api/budget-templates - Create budget template`);
+    console.log(`   DELETE /api/budget-templates/:name - Delete budget template`);
+    console.log(`   GET    /api/budget-analysis/:template/:month - Get budget vs actual`);
+    console.log(`   POST   /api/budget-templates/:name/copy - Copy template to new month`);
   });
 };
 

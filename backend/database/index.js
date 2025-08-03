@@ -49,7 +49,15 @@ const db = {
   getDueRecurringTransactions: () => database.getDueRecurringTransactions(),
   processRecurringTransactions: () => database.processRecurringTransactions(),
   calculateNextDueDate: (date, frequency) => database.calculateNextDueDate(date, frequency),
-  updateNextDueDate: (id, date) => database.updateNextDueDate(id, date)
+  updateNextDueDate: (id, date) => database.updateNextDueDate(id, date),
+  
+  // Envelope budgeting methods
+  getEnvelopeBudgets: (templateName, month) => database.getEnvelopeBudgets(templateName, month),
+  getBudgetTemplates: () => database.getBudgetTemplates(),
+  upsertEnvelopeBudget: (envelope) => database.upsertEnvelopeBudget(envelope),
+  createBudgetFromTemplate: (templateName, month, budgets) => database.createBudgetFromTemplate(templateName, month, budgets),
+  deleteBudgetTemplate: (templateName) => database.deleteBudgetTemplate(templateName),
+  getBudgetVsActual: (templateName, month) => database.getBudgetVsActual(templateName, month)
 };
 
 module.exports = db;
