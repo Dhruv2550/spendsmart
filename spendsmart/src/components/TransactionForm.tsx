@@ -5,7 +5,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Textarea } from "./ui/textarea";
-import { Calendar, DollarSign, Save, X, Loader2, Edit } from "lucide-react";
+import { Calendar, DollarSign, Save, X, Loader2, Edit, Bell } from "lucide-react";
 
 interface Transaction {
   id: number;
@@ -15,6 +15,18 @@ interface Transaction {
   note: string;
   date: string;
   timestamp: string;
+}
+
+interface SpendingAlert {
+  id: string;
+  alert_type: string;
+  category: string | null;
+  threshold_percentage: number;
+  current_amount: number;
+  budget_amount: number;
+  month: string;
+  template_name: string | null;
+  message: string;
 }
 
 interface TransactionFormProps {
@@ -34,6 +46,7 @@ export const TransactionForm = ({ onClose, onTransactionAdded, editingTransactio
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [newAlerts, setNewAlerts] = useState<SpendingAlert[]>([]);
 
   const categories = {
     expense: ["Rent", "Groceries", "Shopping", "Dining", "Transportation", "Entertainment", "Utilities", "Healthcare",  "Other"],
@@ -62,10 +75,29 @@ export const TransactionForm = ({ onClose, onTransactionAdded, editingTransactio
     }
   }, [editingTransaction]);
 
+  // Show browser notification for alerts
+  const showBrowserNotification = (alert: SpendingAlert) => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      const notification = new Notification('SpendSmart Budget Alert', {
+        body: alert.message,
+        icon: '/favicon.ico',
+        tag: alert.id
+      });
+      
+      setTimeout(() => notification.close(), 5000);
+      
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+      };
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setNewAlerts([]);
 
     try {
       // Prepare data for backend
@@ -103,10 +135,23 @@ export const TransactionForm = ({ onClose, onTransactionAdded, editingTransactio
         throw new Error(editingTransaction ? 'Failed to update transaction' : 'Failed to save transaction');
       }
 
-      const savedTransaction = await response.json();
-      console.log(`Transaction ${editingTransaction ? 'updated' : 'saved'} successfully:`, savedTransaction);
+      const result = await response.json();
+      console.log(`Transaction ${editingTransaction ? 'updated' : 'saved'} successfully:`, result);
       
-      // Call the callback to refresh data and close form
+      // Show browser notifications for alerts (non-blocking)
+      if (!editingTransaction && result.alerts && result.alerts.length > 0) {
+        result.alerts.forEach((alert: SpendingAlert) => {
+          showBrowserNotification(alert);
+        });
+        
+        // Show brief success message with alert count
+        setNewAlerts(result.alerts);
+        setTimeout(() => {
+          setNewAlerts([]);
+        }, 3000); // Clear alerts after 3 seconds
+      }
+      
+      // Always close form and refresh data immediately
       onTransactionAdded();
       
     } catch (error) {
@@ -143,6 +188,21 @@ export const TransactionForm = ({ onClose, onTransactionAdded, editingTransactio
             )}
           </DialogTitle>
         </DialogHeader>
+
+        {/* Show non-blocking alert notification */}
+        {newAlerts.length > 0 && (
+          <div className="mb-4 p-3 rounded-lg bg-orange-50 border border-orange-200">
+            <div className="flex items-center gap-2">
+              <Bell className="h-4 w-4 text-orange-600" />
+              <p className="text-sm font-medium text-orange-800">
+                Budget Alert{newAlerts.length > 1 ? 's' : ''} Triggered ({newAlerts.length})
+              </p>
+            </div>
+            <p className="text-xs text-orange-700 mt-1">
+              Check the dashboard for details. Alerts will also appear as browser notifications.
+            </p>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Error Message */}

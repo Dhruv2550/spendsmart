@@ -1,4 +1,3 @@
-// src/components/SettingsPage.tsx - Updated with Dark Mode from your latest code
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -6,7 +5,7 @@ import { Label } from "./ui/label";
 import { Switch } from "./ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Separator } from "./ui/separator";
-import { Save, Database, Shield, Bell, Palette, Moon, Sun } from "lucide-react";
+import { Save, Database, Shield, Bell, Palette, Moon, Sun, AlertTriangle } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
@@ -27,6 +26,42 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
     monthlySavings: "4500",
     expenseLimit: "3000"
   });
+
+  // Alert preferences interface
+  interface AlertSettings {
+    categoryBudgetAlerts: boolean;
+    totalBudgetAlerts: boolean;
+    recurringDueAlerts: boolean;
+    goalProgressAlerts: boolean;
+    browserNotifications: boolean;
+    alertThresholds: {
+      warning: number;
+      critical: number;
+      exceeded: number;
+    };
+  }
+
+  // Alert preferences state
+  const [alertSettings, setAlertSettings] = useState<AlertSettings>(() => {
+    const saved = localStorage.getItem('spendsmart_alert_settings');
+    return saved ? JSON.parse(saved) : {
+      categoryBudgetAlerts: true,
+      totalBudgetAlerts: true,
+      recurringDueAlerts: true,
+      goalProgressAlerts: true,
+      browserNotifications: true,
+      alertThresholds: {
+        warning: 80,    // Yellow warning at 80%
+        critical: 90,   // Orange critical at 90%
+        exceeded: 100   // Red when exceeded
+      }
+    };
+  });
+
+  // Save alert settings to localStorage
+  useEffect(() => {
+    localStorage.setItem('spendsmart_alert_settings', JSON.stringify(alertSettings));
+  }, [alertSettings]);
 
   // Update settings when props change
   useEffect(() => {
@@ -53,10 +88,43 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
     }
   };
 
+  const handleAlertSettingChange = (key: string, value: string | boolean | number) => {
+    if (key.startsWith('threshold_')) {
+      const thresholdType = key.replace('threshold_', '');
+      setAlertSettings((prev: AlertSettings) => ({
+        ...prev,
+        alertThresholds: {
+          ...prev.alertThresholds,
+          [thresholdType]: typeof value === 'string' ? parseFloat(value) : value
+        }
+      }));
+    } else {
+      setAlertSettings((prev: AlertSettings) => ({ ...prev, [key]: value }));
+    }
+  };
+
+  // Request browser notification permission
+  const requestNotificationPermission = async () => {
+    if ('Notification' in window) {
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+        setAlertSettings((prev: AlertSettings) => ({ ...prev, browserNotifications: true }));
+        alert('Browser notifications enabled!');
+      } else {
+        setAlertSettings((prev: AlertSettings) => ({ ...prev, browserNotifications: false }));
+        alert('Browser notifications denied. You can enable them later in your browser settings.');
+      }
+    } else {
+      alert('Browser notifications are not supported in this browser.');
+    }
+  };
+
   const handleSave = () => {
     // In a real app, this would save to backend/database
     console.log("Settings saved:", settings);
+    console.log("Alert settings saved:", alertSettings);
     console.log("Dark mode:", isDarkMode);
+    alert('Settings saved successfully!');
   };
 
   return (
@@ -148,30 +216,144 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
                   </p>
                 </div>
               </div>
+            </CardContent>
+          </Card>
 
-              <Separator />
-
+          {/* Spending Alerts Settings */}
+          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-primary" />
+                Spending Alerts
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Alert Types */}
               <div className="space-y-4">
+                <h4 className="font-medium">Alert Types</h4>
+                
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <Label>Budget Alerts</Label>
-                    <p className="text-sm text-muted-foreground">Get notified when you exceed your budget</p>
+                    <Label>Category Budget Alerts</Label>
+                    <p className="text-sm text-muted-foreground">Alert when approaching category budget limits</p>
                   </div>
                   <Switch
-                    checked={settings.budgetAlerts}
-                    onCheckedChange={(checked) => handleSettingChange("budgetAlerts", checked)}
+                    checked={alertSettings.categoryBudgetAlerts}
+                    onCheckedChange={(checked) => handleAlertSettingChange("categoryBudgetAlerts", checked)}
                   />
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <Label>Email Notifications</Label>
-                    <p className="text-sm text-muted-foreground">Receive monthly summaries via email</p>
+                    <Label>Total Budget Alerts</Label>
+                    <p className="text-sm text-muted-foreground">Alert when approaching overall monthly limit</p>
                   </div>
                   <Switch
-                    checked={settings.emailNotifications}
-                    onCheckedChange={(checked) => handleSettingChange("emailNotifications", checked)}
+                    checked={alertSettings.totalBudgetAlerts}
+                    onCheckedChange={(checked) => handleAlertSettingChange("totalBudgetAlerts", checked)}
                   />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label>Recurring Due Alerts</Label>
+                    <p className="text-sm text-muted-foreground">Alert about upcoming recurring transactions</p>
+                  </div>
+                  <Switch
+                    checked={alertSettings.recurringDueAlerts}
+                    onCheckedChange={(checked) => handleAlertSettingChange("recurringDueAlerts", checked)}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label>Goal Progress Alerts</Label>
+                    <p className="text-sm text-muted-foreground">Alert about savings goal progress</p>
+                  </div>
+                  <Switch
+                    checked={alertSettings.goalProgressAlerts}
+                    onCheckedChange={(checked) => handleAlertSettingChange("goalProgressAlerts", checked)}
+                  />
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Alert Thresholds */}
+              <div className="space-y-4">
+                <h4 className="font-medium">Alert Thresholds</h4>
+                
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Warning (%)</Label>
+                    <Input
+                      type="number"
+                      min="50"
+                      max="95"
+                      value={alertSettings.alertThresholds.warning}
+                      onChange={(e) => handleAlertSettingChange("threshold_warning", e.target.value)}
+                      className="text-center"
+                    />
+                    <p className="text-xs text-yellow-600">Yellow alert</p>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label>Critical (%)</Label>
+                    <Input
+                      type="number"
+                      min="85"
+                      max="99"
+                      value={alertSettings.alertThresholds.critical}
+                      onChange={(e) => handleAlertSettingChange("threshold_critical", e.target.value)}
+                      className="text-center"
+                    />
+                    <p className="text-xs text-orange-600">Orange alert</p>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label>Exceeded</Label>
+                    <Input
+                      type="number"
+                      value={alertSettings.alertThresholds.exceeded}
+                      disabled
+                      className="text-center bg-gray-100"
+                    />
+                    <p className="text-xs text-red-600">Red alert</p>
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Browser Notifications */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label>Browser Notifications</Label>
+                    <p className="text-sm text-muted-foreground">Show popup notifications in browser</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={alertSettings.browserNotifications}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          requestNotificationPermission();
+                        } else {
+                          handleAlertSettingChange("browserNotifications", false);
+                        }
+                      }}
+                    />
+                    {!alertSettings.browserNotifications && (
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={requestNotificationPermission}
+                      >
+                        <Bell className="h-3 w-3 mr-1" />
+                        Enable
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -210,10 +392,26 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
             </CardHeader>
             <CardContent className="space-y-4">
               {[
-                { label: "Monthly analytics", description: "Get monthly spending summaries", enabled: true },
-                { label: "Budget Warnings", description: "Alert when approaching budget limits", enabled: true },
-                { label: "Goal Achievements", description: "Celebrate when you hit savings goals", enabled: false },
-                { label: "Weekly Insights", description: "Receive weekly spending insights", enabled: false }
+                { 
+                  label: "Monthly analytics", 
+                  description: "Get monthly spending summaries", 
+                  enabled: settings.budgetAlerts 
+                },
+                { 
+                  label: "Budget Warnings", 
+                  description: "Alert when approaching budget limits", 
+                  enabled: alertSettings.categoryBudgetAlerts 
+                },
+                { 
+                  label: "Goal Achievements", 
+                  description: "Celebrate when you hit savings goals", 
+                  enabled: alertSettings.goalProgressAlerts 
+                },
+                { 
+                  label: "Weekly Insights", 
+                  description: "Receive weekly spending insights", 
+                  enabled: false 
+                }
               ].map((notification, index) => (
                 <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
                   <div className="space-y-0.5">
@@ -252,8 +450,17 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
                   <li>• Dark/Light Mode</li>
                   <li>• Database Persistence</li>
                   <li>• AWS Deployment Ready</li>
+                  <li>• Spending Alerts & Notifications</li>
                 </ul>
               </div>
+              
+              <Separator />
+              
+              {/* Save Button */}
+              <Button onClick={handleSave} className="w-full">
+                <Save className="mr-2 h-4 w-4" />
+                Save All Settings
+              </Button>
             </CardContent>
           </Card>
         </div>

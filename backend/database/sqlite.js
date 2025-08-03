@@ -89,7 +89,34 @@ const init = () => {
                   reject(err);
                 } else {
                   console.log('Envelope budgets table ready');
-                  resolve();
+                  
+                  // Create spending alerts table
+                  const createAlertsTableQuery = `
+                    CREATE TABLE IF NOT EXISTS spending_alerts (
+                      id TEXT PRIMARY KEY,
+                      alert_type TEXT NOT NULL CHECK (alert_type IN ('category_budget', 'total_budget', 'recurring_due', 'goal_progress')),
+                      category TEXT,
+                      threshold_percentage REAL NOT NULL,
+                      current_amount REAL NOT NULL,
+                      budget_amount REAL NOT NULL,
+                      month TEXT NOT NULL,
+                      template_name TEXT,
+                      message TEXT NOT NULL,
+                      is_read INTEGER DEFAULT 0,
+                      is_dismissed INTEGER DEFAULT 0,
+                      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                  `;
+                  
+                  db.run(createAlertsTableQuery, (err) => {
+                    if (err) {
+                      console.error('Error creating spending_alerts table:', err);
+                      reject(err);
+                    } else {
+                      console.log('Spending alerts table ready');
+                      resolve();
+                    }
+                  });
                 }
               });
             }
@@ -784,6 +811,256 @@ const getBudgetVsActual = (templateName, month) => {
   });
 };
 
+// ============================================
+// SPENDING ALERTS FUNCTIONS
+// ============================================
+
+// Helper function for formatting currency in alerts
+const formatCurrency = (amount) => `$${amount.toLocaleString()}`;
+
+// Check for budget alerts when a transaction is created
+const checkBudgetAlerts = async (transaction) => {
+  try {
+    if (transaction.type !== 'expense') return [];
+    
+    const month = transaction.date.substring(0, 7);
+    const alerts = [];
+    
+    // Get all budget templates for this month
+    const templatesQuery = `
+      SELECT DISTINCT template_name FROM envelope_budgets 
+      WHERE month = ? AND is_active = 1
+    `;
+    
+    return new Promise((resolve, reject) => {
+      db.all(templatesQuery, [month], async (err, templates) => {
+        if (err) {
+          console.error('Error getting budget templates for alerts:', err);
+          reject(err);
+          return;
+        }
+        
+        try {
+          for (const template of templates) {
+            // Get budget vs actual for this template
+            const analysis = await getBudgetVsActual(template.template_name, month);
+            
+            // Check each category for alerts
+            for (const item of analysis) {
+              if (item.category === transaction.category && item.budgeted > 0) {
+                const percentage = item.percentage;
+                let shouldAlert = false;
+                let alertThreshold = 0;
+                
+                // Determine alert threshold
+                if (percentage >= 100) {
+                  shouldAlert = true;
+                  alertThreshold = 100;
+                } else if (percentage >= 90) {
+                  shouldAlert = true;
+                  alertThreshold = 90;
+                } else if (percentage >= 80) {
+                  shouldAlert = true;
+                  alertThreshold = 80;
+                }
+                
+                if (shouldAlert) {
+                  // Check if we already have this alert
+                  const existingAlert = await getExistingAlert(
+                    'category_budget', 
+                    item.category, 
+                    month, 
+                    template.template_name,
+                    alertThreshold
+                  );
+                  
+                  if (!existingAlert) {
+                    const alertMessage = percentage >= 100 
+                      ? `You've exceeded your ${item.category} budget by ${formatCurrency(Math.abs(item.remaining))}`
+                      : `You've used ${percentage.toFixed(0)}% of your ${item.category} budget (${formatCurrency(item.actual)} of ${formatCurrency(item.budgeted)})`;
+                    
+                    const alert = await createSpendingAlert({
+                      alert_type: 'category_budget',
+                      category: item.category,
+                      threshold_percentage: alertThreshold,
+                      current_amount: item.actual,
+                      budget_amount: item.budgeted,
+                      month: month,
+                      template_name: template.template_name,
+                      message: alertMessage
+                    });
+                    
+                    alerts.push(alert);
+                  }
+                }
+              }
+            }
+          }
+          
+          resolve(alerts);
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+  } catch (error) {
+    console.error('Error checking budget alerts:', error);
+    return [];
+  }
+};
+
+// Get existing alert to prevent duplicates
+const getExistingAlert = (alertType, category, month, templateName, threshold) => {
+  return new Promise((resolve, reject) => {
+    const query = `
+      SELECT * FROM spending_alerts 
+      WHERE alert_type = ? AND category = ? AND month = ? 
+      AND template_name = ? AND threshold_percentage = ?
+      AND is_dismissed = 0
+    `;
+    
+    db.get(query, [alertType, category, month, templateName, threshold], (err, row) => {
+      if (err) {
+        console.error('Error checking existing alert:', err);
+        reject(err);
+      } else {
+        resolve(row || null);
+      }
+    });
+  });
+};
+
+// Create spending alert
+const createSpendingAlert = (alertData) => {
+  return new Promise((resolve, reject) => {
+    const id = uuidv4();
+    
+    const query = `
+      INSERT INTO spending_alerts 
+      (id, alert_type, category, threshold_percentage, current_amount, budget_amount, month, template_name, message)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+    
+    const values = [
+      id,
+      alertData.alert_type,
+      alertData.category || null,
+      alertData.threshold_percentage,
+      parseFloat(alertData.current_amount),
+      parseFloat(alertData.budget_amount),
+      alertData.month,
+      alertData.template_name || null,
+      alertData.message
+    ];
+    
+    db.run(query, values, function(err) {
+      if (err) {
+        console.error('Error creating spending alert:', err);
+        reject(err);
+      } else {
+        const newAlert = {
+          id,
+          ...alertData,
+          current_amount: parseFloat(alertData.current_amount),
+          budget_amount: parseFloat(alertData.budget_amount),
+          is_read: false,
+          is_dismissed: false,
+          created_at: new Date().toISOString()
+        };
+        console.log('Created spending alert:', newAlert.id);
+        resolve(newAlert);
+      }
+    });
+  });
+};
+
+// Get all active alerts
+const getActiveAlerts = (month) => {
+  return new Promise((resolve, reject) => {
+    let query = `
+      SELECT * FROM spending_alerts 
+      WHERE is_dismissed = 0
+    `;
+    const params = [];
+    
+    if (month) {
+      query += ' AND month = ?';
+      params.push(month);
+    }
+    
+    query += ' ORDER BY created_at DESC';
+    
+    db.all(query, params, (err, rows) => {
+      if (err) {
+        console.error('Error getting active alerts:', err);
+        reject(err);
+      } else {
+        const alerts = rows.map(row => ({
+          ...row,
+          current_amount: parseFloat(row.current_amount),
+          budget_amount: parseFloat(row.budget_amount),
+          threshold_percentage: parseFloat(row.threshold_percentage),
+          is_read: Boolean(row.is_read),
+          is_dismissed: Boolean(row.is_dismissed)
+        }));
+        console.log(`Retrieved ${alerts.length} active alerts`);
+        resolve(alerts);
+      }
+    });
+  });
+};
+
+// Mark alert as read
+const markAlertAsRead = (id) => {
+  return new Promise((resolve, reject) => {
+    const query = 'UPDATE spending_alerts SET is_read = 1 WHERE id = ?';
+    
+    db.run(query, [id], function(err) {
+      if (err) {
+        console.error('Error marking alert as read:', err);
+        reject(err);
+      } else {
+        console.log('Marked alert as read:', id);
+        resolve({ success: true });
+      }
+    });
+  });
+};
+
+// Dismiss alert
+const dismissAlert = (id) => {
+  return new Promise((resolve, reject) => {
+    const query = 'UPDATE spending_alerts SET is_dismissed = 1 WHERE id = ?';
+    
+    db.run(query, [id], function(err) {
+      if (err) {
+        console.error('Error dismissing alert:', err);
+        reject(err);
+      } else {
+        console.log('Dismissed alert:', id);
+        resolve({ success: true });
+      }
+    });
+  });
+};
+
+// Dismiss all alerts for a month
+const dismissAllAlerts = (month) => {
+  return new Promise((resolve, reject) => {
+    const query = 'UPDATE spending_alerts SET is_dismissed = 1 WHERE month = ?';
+    
+    db.run(query, [month], function(err) {
+      if (err) {
+        console.error('Error dismissing all alerts:', err);
+        reject(err);
+      } else {
+        console.log(`Dismissed all alerts for ${month}:`, this.changes);
+        resolve({ success: true, changes: this.changes });
+      }
+    });
+  });
+};
+
 module.exports = {
   init,
   getAllTransactions,
@@ -809,5 +1086,13 @@ module.exports = {
   upsertEnvelopeBudget,
   createBudgetFromTemplate,
   deleteBudgetTemplate,
-  getBudgetVsActual
+  getBudgetVsActual,
+  // Spending alerts methods
+  checkBudgetAlerts,
+  createSpendingAlert,
+  getActiveAlerts,
+  markAlertAsRead,
+  dismissAlert,
+  dismissAllAlerts,
+  getExistingAlert
 };

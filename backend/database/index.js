@@ -57,7 +57,16 @@ const db = {
   upsertEnvelopeBudget: (envelope) => database.upsertEnvelopeBudget(envelope),
   createBudgetFromTemplate: (templateName, month, budgets) => database.createBudgetFromTemplate(templateName, month, budgets),
   deleteBudgetTemplate: (templateName) => database.deleteBudgetTemplate(templateName),
-  getBudgetVsActual: (templateName, month) => database.getBudgetVsActual(templateName, month)
+  getBudgetVsActual: (templateName, month) => database.getBudgetVsActual(templateName, month),
+  
+  // Spending alerts methods
+  checkBudgetAlerts: (transaction) => database.checkBudgetAlerts(transaction),
+  createSpendingAlert: (alert) => database.createSpendingAlert(alert),
+  getActiveAlerts: (month) => database.getActiveAlerts(month),
+  markAlertAsRead: (id) => database.markAlertAsRead(id),
+  dismissAlert: (id) => database.dismissAlert(id),
+  dismissAllAlerts: (month) => database.dismissAllAlerts(month),
+  getExistingAlert: (type, category, month, template, threshold) => database.getExistingAlert(type, category, month, template, threshold)
 };
 
 module.exports = db;

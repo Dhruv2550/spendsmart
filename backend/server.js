@@ -35,7 +35,7 @@ app.get('/api/records', async (req, res) => {
   }
 });
 
-// Add a new record (income or expense)
+// Add a new record (income or expense) - Enhanced with alert checking
 app.post('/api/records', async (req, res) => {
   try {
     const { type, category, amount, note, date } = req.body;
@@ -59,7 +59,23 @@ app.post('/api/records', async (req, res) => {
     };
     
     const createdRecord = await db.createTransaction(newRecord);
-    res.status(201).json(createdRecord);
+    
+    // Check for budget alerts after creating the transaction
+    let alerts = [];
+    if (type === 'expense') {
+      try {
+        alerts = await db.checkBudgetAlerts(createdRecord);
+      } catch (alertError) {
+        console.error('Error checking alerts:', alertError);
+        // Don't fail the transaction creation if alert checking fails
+      }
+    }
+    
+    res.status(201).json({ 
+      transaction: createdRecord,
+      alerts: alerts,
+      alertCount: alerts.length
+    });
   } catch (error) {
     console.error('Error creating record:', error);
     res.status(500).json({ error: 'Failed to create record' });
@@ -508,6 +524,86 @@ app.post('/api/budget-templates/:templateName/copy', async (req, res) => {
   }
 });
 
+// ============================================
+// SPENDING ALERTS ROUTES
+// ============================================
+
+// Get active alerts for a month
+app.get('/api/alerts/:month', async (req, res) => {
+  try {
+    const { month } = req.params;
+    
+    // Validate month format
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ error: 'Invalid month format. Use YYYY-MM' });
+    }
+    
+    const alerts = await db.getActiveAlerts(month);
+    res.json(alerts);
+  } catch (error) {
+    console.error('Error getting alerts:', error);
+    res.status(500).json({ error: 'Failed to retrieve alerts' });
+  }
+});
+
+// Get all active alerts (no month filter)
+app.get('/api/alerts', async (req, res) => {
+  try {
+    const alerts = await db.getActiveAlerts(null);
+    res.json(alerts);
+  } catch (error) {
+    console.error('Error getting alerts:', error);
+    res.status(500).json({ error: 'Failed to retrieve alerts' });
+  }
+});
+
+// Mark alert as read
+app.patch('/api/alerts/:id/read', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const result = await db.markAlertAsRead(id);
+    res.json({ message: 'Alert marked as read', success: result.success });
+  } catch (error) {
+    console.error('Error marking alert as read:', error);
+    res.status(500).json({ error: 'Failed to mark alert as read' });
+  }
+});
+
+// Dismiss alert
+app.patch('/api/alerts/:id/dismiss', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const result = await db.dismissAlert(id);
+    res.json({ message: 'Alert dismissed', success: result.success });
+  } catch (error) {
+    console.error('Error dismissing alert:', error);
+    res.status(500).json({ error: 'Failed to dismiss alert' });
+  }
+});
+
+// Dismiss all alerts for a month
+app.patch('/api/alerts/dismiss-all/:month', async (req, res) => {
+  try {
+    const { month } = req.params;
+    
+    // Validate month format
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ error: 'Invalid month format. Use YYYY-MM' });
+    }
+    
+    const result = await db.dismissAllAlerts(month);
+    res.json({ 
+      message: `Dismissed all alerts for ${month}`,
+      changes: result.changes 
+    });
+  } catch (error) {
+    console.error('Error dismissing all alerts:', error);
+    res.status(500).json({ error: 'Failed to dismiss all alerts' });
+  }
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
@@ -557,7 +653,7 @@ const startServer = async () => {
     console.log(`SpendSmart Backend running on http://localhost:${PORT}`);
     console.log(`API endpoints available at:`);
     console.log(`   GET    /api/records - Get all records`);
-    console.log(`   POST   /api/records - Add new record`);
+    console.log(`   POST   /api/records - Add new record (with alert checking)`);
     console.log(`   PUT    /api/records/:id - Update record`);
     console.log(`   DELETE /api/records/:id - Delete record`);
     console.log(`   GET    /api/summary/:month - Get monthly summary`);
@@ -575,6 +671,11 @@ const startServer = async () => {
     console.log(`   DELETE /api/budget-templates/:name - Delete budget template`);
     console.log(`   GET    /api/budget-analysis/:template/:month - Get budget vs actual`);
     console.log(`   POST   /api/budget-templates/:name/copy - Copy template to new month`);
+    console.log(`   GET    /api/alerts/:month - Get active alerts for month`);
+    console.log(`   GET    /api/alerts - Get all active alerts`);
+    console.log(`   PATCH  /api/alerts/:id/read - Mark alert as read`);
+    console.log(`   PATCH  /api/alerts/:id/dismiss - Dismiss alert`);
+    console.log(`   PATCH  /api/alerts/dismiss-all/:month - Dismiss all alerts for month`);
   });
 };
 

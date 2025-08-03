@@ -1,4 +1,3 @@
-// src/components/Dashboard.tsx - Complete version with month switcher
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -8,6 +7,7 @@ import AllTransactions from './AllTransactions';
 import { PanelDetailsModal } from './PanelDetailsModal';
 import { ExpenseTrackerView } from './ExpenseTrackerView';
 import { ExportImportModal } from './ExportImportModal';
+import SpendingAlertsNotification from './SpendingAlertsNotification';
 import { 
   Plus, 
   DollarSign, 
@@ -18,11 +18,9 @@ import {
   Pencil,
   Trash2,
   Table,
-  Download,
-  Upload
+  Download
 } from 'lucide-react';
 
-// Use your exact Transaction interface
 interface Transaction {
   id: number;
   type: 'income' | 'expense';
@@ -68,7 +66,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
   const totalIncome = React.useMemo(() => {
     return transactions
       .filter((transaction: Transaction) => {
-        const transactionMonth = transaction.date.substring(0, 7); // YYYY-MM format
+        const transactionMonth = transaction.date.substring(0, 7);
         return transaction.type === 'income' && transactionMonth === selectedMonth;
       })
       .reduce((sum: number, transaction: Transaction) => sum + Number(transaction.amount), 0);
@@ -77,7 +75,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
   const totalExpenses = React.useMemo(() => {
     return transactions
       .filter((transaction: Transaction) => {
-        const transactionMonth = transaction.date.substring(0, 7); // YYYY-MM format
+        const transactionMonth = transaction.date.substring(0, 7);
         return transaction.type === 'expense' && transactionMonth === selectedMonth;
       })
       .reduce((sum: number, transaction: Transaction) => sum + Number(transaction.amount), 0);
@@ -95,13 +93,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
     setEditingTransaction(transaction);
     setShowTransactionForm(true);
     
-    // Check if we're coming from AllTransactions
     if (showAllTransactions) {
       setShowAllTransactions(false);
       setReturnToAllTransactions(true);
     }
     
-    // Check if we're coming from ExpenseTracker
     if (showExpenseTracker) {
       setShowExpenseTracker(false);
       setReturnToExpenseTracker(true);
@@ -121,7 +117,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
     }
   };
 
-  // Add a non-async version for AllTransactions
   const handleDeleteTransactionSync = (id: number) => {
     handleDeleteTransaction(id);
   };
@@ -130,13 +125,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
     setShowTransactionForm(false);
     setEditingTransaction(null);
     
-    // If we should return to AllTransactions, show it again
     if (returnToAllTransactions) {
       setShowAllTransactions(true);
       setReturnToAllTransactions(false);
     }
     
-    // If we should return to ExpenseTracker, show it again
     if (returnToExpenseTracker) {
       setShowExpenseTracker(true);
       setReturnToExpenseTracker(false);
@@ -148,22 +141,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
     setShowTransactionForm(false);
     setEditingTransaction(null);
     
-    // If we should return to AllTransactions, show it again
     if (returnToAllTransactions) {
       setShowAllTransactions(true);
       setReturnToAllTransactions(false);
     }
     
-    // If we should return to ExpenseTracker, show it again
     if (returnToExpenseTracker) {
       setShowExpenseTracker(true);
       setReturnToExpenseTracker(false);
     }
   };
 
-  // Handle import success
   const handleImportSuccess = () => {
-    refetch(); // Refresh transactions after import
+    refetch();
   };
 
   // Get top expense categories - FILTERED BY MONTH
@@ -249,6 +239,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
           </h1>
           <p className="text-muted-foreground">Overview of your financial activity</p>
         </div>
+
+        {/* Spending Alerts Notification */}
+        <SpendingAlertsNotification 
+          month={selectedMonth} 
+          onAlertAction={() => {
+            refetch();
+          }}
+        />
 
         {/* Action Buttons and Month Selector */}
         <div className="flex justify-between items-center mb-8">
