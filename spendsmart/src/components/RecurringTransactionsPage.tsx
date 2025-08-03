@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Textarea } from './ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Switch } from './ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { 
   Plus, 
   Edit2, 
@@ -20,7 +21,14 @@ import {
   AlertCircle,
   CheckCircle,
   RefreshCw,
-  Repeat
+  Repeat,
+  Bell,
+  CreditCard,
+  Home,
+  Zap,
+  Car,
+  Check,
+  X
 } from 'lucide-react';
 
 interface RecurringTransaction {
@@ -37,6 +45,7 @@ interface RecurringTransaction {
   is_active: boolean;
   last_processed: string | null;
   created_at: string;
+  reminder_days?: number; // New field for bill reminders
 }
 
 const RecurringTransactionsPage: React.FC = () => {
@@ -45,6 +54,7 @@ const RecurringTransactionsPage: React.FC = () => {
   const [editingTransaction, setEditingTransaction] = useState<RecurringTransaction | null>(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [selectedView, setSelectedView] = useState<'all' | 'bills' | 'income'>('all');
 
   const categories = {
     expense: ["Rent", "Groceries", "Shopping", "Dining", "Transportation", "Entertainment", "Utilities", "Healthcare", "Other"],
@@ -97,6 +107,97 @@ const RecurringTransactionsPage: React.FC = () => {
     } finally {
       setProcessing(false);
     }
+  };
+
+  // Mark bill as paid (creates transaction and updates next due date)
+  const markAsPaid = async (transaction: RecurringTransaction) => {
+    try {
+      // Create the transaction
+      const response = await fetch('http://localhost:3001/api/records', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: transaction.type,
+          category: transaction.category,
+          amount: transaction.amount,
+          note: `${transaction.note} (Manually paid: ${transaction.name})`,
+          date: new Date().toISOString().split('T')[0]
+        })
+      });
+
+      if (!response.ok) throw new Error('Failed to create payment transaction');
+
+      // Update the next due date
+      const today = new Date().toISOString().split('T')[0];
+      const nextDueDate = calculateNextDueDate(today, transaction.frequency);
+      
+      const updateResponse = await fetch(`http://localhost:3001/api/recurring/${transaction.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...transaction,
+          next_due_date: nextDueDate
+        })
+      });
+
+      if (!updateResponse.ok) throw new Error('Failed to update next due date');
+
+      await loadRecurringTransactions();
+      alert(`Marked "${transaction.name}" as paid and updated next due date!`);
+    } catch (error) {
+      console.error('Error marking as paid:', error);
+      alert('Failed to mark as paid');
+    }
+  };
+
+  // Skip this occurrence (just update next due date without creating transaction)
+  const skipThisMonth = async (transaction: RecurringTransaction) => {
+    if (!window.confirm(`Skip this month's "${transaction.name}"? This will move the due date to next occurrence without creating a transaction.`)) {
+      return;
+    }
+
+    try {
+      const nextDueDate = calculateNextDueDate(transaction.next_due_date, transaction.frequency);
+      
+      const response = await fetch(`http://localhost:3001/api/recurring/${transaction.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...transaction,
+          next_due_date: nextDueDate
+        })
+      });
+
+      if (!response.ok) throw new Error('Failed to skip transaction');
+
+      await loadRecurringTransactions();
+      alert(`Skipped "${transaction.name}" and updated next due date!`);
+    } catch (error) {
+      console.error('Error skipping transaction:', error);
+      alert('Failed to skip transaction');
+    }
+  };
+
+  // Helper function to calculate next due date
+  const calculateNextDueDate = (currentDate: string, frequency: string): string => {
+    const date = new Date(currentDate);
+    
+    switch (frequency) {
+      case 'weekly':
+        date.setDate(date.getDate() + 7);
+        break;
+      case 'monthly':
+        date.setMonth(date.getMonth() + 1);
+        break;
+      case 'quarterly':
+        date.setMonth(date.getMonth() + 3);
+        break;
+      case 'yearly':
+        date.setFullYear(date.getFullYear() + 1);
+        break;
+    }
+    
+    return date.toISOString().split('T')[0];
   };
 
   // Toggle active status
@@ -154,16 +255,40 @@ const RecurringTransactionsPage: React.FC = () => {
     return diffDays;
   };
 
+  const getCategoryIcon = (category: string) => {
+    const icons: { [key: string]: React.ComponentType<any> } = {
+      'Rent': Home,
+      'Utilities': Zap,
+      'Transportation': Car,
+      'Healthcare': AlertCircle,
+      'Other': DollarSign
+    };
+    return icons[category] || DollarSign;
+  };
+
   const activeTransactions = recurringTransactions.filter(t => t.is_active);
   const inactiveTransactions = recurringTransactions.filter(t => !t.is_active);
+  const bills = activeTransactions.filter(t => t.type === 'expense');
+  const incomeTransactions = activeTransactions.filter(t => t.type === 'income');
+  
+  // Get upcoming bills (next 30 days)
+  const upcomingBills = bills.filter(t => {
+    const daysUntil = getDaysUntilDue(t.next_due_date);
+    return daysUntil <= 30 && daysUntil >= -7; // Include overdue bills up to 7 days
+  }).sort((a, b) => getDaysUntilDue(a.next_due_date) - getDaysUntilDue(b.next_due_date));
+
   const dueTransactions = activeTransactions.filter(t => getDaysUntilDue(t.next_due_date) <= 0);
+  const dueSoon = activeTransactions.filter(t => {
+    const days = getDaysUntilDue(t.next_due_date);
+    return days > 0 && days <= 7;
+  });
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
         <div className="container mx-auto px-4 py-8">
           <div className="text-center">
-            <p className="text-lg">Loading recurring transactions...</p>
+            <p className="text-lg">Loading bills and recurring transactions...</p>
           </div>
         </div>
       </div>
@@ -176,9 +301,9 @@ const RecurringTransactionsPage: React.FC = () => {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-primary mb-2">
-            Recurring Transactions
+            Bills & Recurring
           </h1>
-          <p className="text-muted-foreground">Automate your regular income and expenses</p>
+          <p className="text-muted-foreground">Manage your bills, recurring transactions, and payment reminders</p>
         </div>
 
         {/* Action Bar */}
@@ -207,39 +332,67 @@ const RecurringTransactionsPage: React.FC = () => {
             </Button>
           </div>
           
-          {dueTransactions.length > 0 && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
-              <span className="text-sm font-medium text-yellow-700">
-                {dueTransactions.length} transaction{dueTransactions.length > 1 ? 's' : ''} due
-              </span>
-            </div>
-          )}
+          <div className="flex items-center gap-4">
+            {dueSoon.length > 0 && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                <span className="text-sm font-medium text-blue-700">
+                  {dueSoon.length} due within 7 days
+                </span>
+              </div>
+            )}
+            {dueTransactions.length > 0 && (
+              <div className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+                <span className="text-sm font-medium text-orange-700">
+                  {dueTransactions.length} due now
+                </span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Overview Cards */}
         <div className="grid gap-6 md:grid-cols-4 mb-8">
           <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active</CardTitle>
-              <Repeat className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Active Bills</CardTitle>
+              <CreditCard className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{activeTransactions.length}</div>
+              <div className="text-2xl font-bold">{bills.length}</div>
               <p className="text-xs text-muted-foreground">
-                {inactiveTransactions.length} inactive
+                {dueTransactions.filter(t => t.type === 'expense').length} due now
               </p>
             </CardContent>
           </Card>
 
           <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Due Today</CardTitle>
-              <AlertCircle className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Due Soon</CardTitle>
+              <Bell className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-orange-600">{dueTransactions.length}</div>
+              <div className="text-2xl font-bold text-blue-600">{dueSoon.length}</div>
               <p className="text-xs text-muted-foreground">
-                Need processing
+                Next 7 days
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Monthly Bills</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-red-600">
+                {formatCurrency(
+                  bills
+                    .filter(t => t.frequency === 'monthly')
+                    .reduce((sum, t) => sum + t.amount, 0)
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Monthly obligations
               </p>
             </CardContent>
           </Card>
@@ -252,224 +405,535 @@ const RecurringTransactionsPage: React.FC = () => {
             <CardContent>
               <div className="text-2xl font-bold text-green-600">
                 {formatCurrency(
-                  activeTransactions
-                    .filter(t => t.type === 'income' && t.frequency === 'monthly')
+                  incomeTransactions
+                    .filter(t => t.frequency === 'monthly')
                     .reduce((sum, t) => sum + t.amount, 0)
                 )}
               </div>
               <p className="text-xs text-muted-foreground">
-                From recurring income
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Monthly Expenses</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">
-                {formatCurrency(
-                  activeTransactions
-                    .filter(t => t.type === 'expense' && t.frequency === 'monthly')
-                    .reduce((sum, t) => sum + t.amount, 0)
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                From recurring expenses
+                Monthly income
               </p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Active Recurring Transactions */}
-        <div className="space-y-6">
-          <h2 className="text-xl font-semibold">Active Recurring Transactions</h2>
-          
-          {activeTransactions.length > 0 ? (
-            <div className="grid gap-4">
-              {activeTransactions.map((transaction) => {
-                const daysUntilDue = getDaysUntilDue(transaction.next_due_date);
-                const isDue = daysUntilDue <= 0;
-                const isOverdue = daysUntilDue < 0;
+        {/* Upcoming Bills Dashboard */}
+        {upcomingBills.length > 0 && (
+          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 mb-8">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="h-5 w-5" />
+                Upcoming Bills (Next 30 Days)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {upcomingBills.map((bill) => {
+                  const daysUntilDue = getDaysUntilDue(bill.next_due_date);
+                  const isDue = daysUntilDue <= 0;
+                  const isOverdue = daysUntilDue < 0;
+                  const dueSoon = daysUntilDue > 0 && daysUntilDue <= 7;
+                  const CategoryIcon = getCategoryIcon(bill.category);
 
-                return (
-                  <Card key={transaction.id} className={`border-0 shadow-md bg-gradient-to-br from-card to-card/95 ${
-                    isDue ? 'ring-2 ring-orange-200' : ''
-                  }`}>
-                    <CardContent className="p-6">
-                      <div className="flex justify-between items-start mb-4">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <div className={`w-3 h-3 rounded-full ${
-                              transaction.type === 'income' ? 'bg-green-500' : 'bg-red-500'
-                            }`} />
-                            <h3 className="font-semibold text-lg">{transaction.name}</h3>
-                            <span className="text-sm bg-gray-100 px-2 py-1 rounded">
-                              {getFrequencyLabel(transaction.frequency)}
-                            </span>
-                          </div>
-                          
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                            <div>
-                              <span className="text-muted-foreground">Category:</span>
-                              <p className="font-medium">{transaction.category}</p>
-                            </div>
-                            <div>
-                              <span className="text-muted-foreground">Amount:</span>
-                              <p className={`font-medium ${
-                                transaction.type === 'income' ? 'text-green-600' : 'text-red-600'
-                              }`}>
-                                {transaction.type === 'income' ? '+' : '-'}{formatCurrency(transaction.amount)}
-                              </p>
-                            </div>
-                            <div>
-                              <span className="text-muted-foreground">Next Due:</span>
-                              <p className={`font-medium ${
-                                isDue ? 'text-orange-600' : 'text-gray-700'
-                              }`}>
-                                {formatDate(transaction.next_due_date)}
-                              </p>
-                            </div>
-                            <div>
-                              <span className="text-muted-foreground">Status:</span>
-                              <p className="font-medium">
-                                {isOverdue ? (
-                                  <span className="text-red-600">Overdue</span>
-                                ) : isDue ? (
-                                  <span className="text-orange-600">Due Today</span>
-                                ) : (
-                                  <span className="text-gray-600">
-                                    {daysUntilDue === 1 ? 'Due tomorrow' : `Due in ${daysUntilDue} days`}
-                                  </span>
-                                )}
-                              </p>
-                            </div>
-                          </div>
-                          
-                          {transaction.note && (
-                            <p className="text-sm text-muted-foreground mt-2">{transaction.note}</p>
-                          )}
-                        </div>
-
-                        <div className="flex gap-2 ml-4">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => toggleActive(transaction.id)}
-                          >
-                            <Pause className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setEditingTransaction(transaction);
-                              setShowForm(true);
-                            }}
-                          >
-                            <Edit2 className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => deleteRecurringTransaction(transaction.id)}
-                            className="text-red-500 hover:text-red-600"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </div>
-
-                      {isDue && (
-                        <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
-                          <div className="flex items-center">
-                            <Clock className="h-4 w-4 text-orange-500 mr-2" />
-                            <span className="text-sm font-medium text-orange-700">
-                              This transaction is {isOverdue ? 'overdue' : 'due today'}. 
-                              Click "Process Due Now" to create the transaction.
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          ) : (
-            <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
-              <CardContent className="text-center py-12">
-                <Repeat className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No recurring transactions yet</h3>
-                <p className="text-muted-foreground mb-4">
-                  Set up automatic transactions for bills, salary, and other regular payments
-                </p>
-                <Button onClick={() => setShowForm(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create First Recurring Transaction
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Inactive Transactions */}
-          {inactiveTransactions.length > 0 && (
-            <div className="mt-8">
-              <h3 className="text-lg font-semibold mb-4">Inactive Recurring Transactions</h3>
-              <div className="grid gap-4">
-                {inactiveTransactions.map((transaction) => (
-                  <Card key={transaction.id} className="border-0 shadow-md bg-gradient-to-br from-gray-50 to-gray-100 opacity-75">
-                    <CardContent className="p-4">
-                      <div className="flex justify-between items-center">
+                  return (
+                    <div key={bill.id} className={`p-4 rounded-lg border ${
+                      isOverdue ? 'border-red-200 bg-red-50' :
+                      isDue ? 'border-orange-200 bg-orange-50' :
+                      dueSoon ? 'border-blue-200 bg-blue-50' :
+                      'border-gray-200 bg-gray-50'
+                    }`}>
+                      <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <div className={`w-3 h-3 rounded-full ${
-                            transaction.type === 'income' ? 'bg-green-300' : 'bg-red-300'
+                          <CategoryIcon className={`h-5 w-5 ${
+                            isOverdue ? 'text-red-600' :
+                            isDue ? 'text-orange-600' :
+                            dueSoon ? 'text-blue-600' :
+                            'text-gray-600'
                           }`} />
                           <div>
-                            <h4 className="font-medium text-gray-700">{transaction.name}</h4>
-                            <p className="text-sm text-gray-500">
-                              {formatCurrency(transaction.amount)} • {getFrequencyLabel(transaction.frequency)}
+                            <h4 className="font-medium">{bill.name}</h4>
+                            <p className="text-sm text-muted-foreground">
+                              {formatCurrency(bill.amount)} • {bill.category} • {getFrequencyLabel(bill.frequency)}
                             </p>
                           </div>
                         </div>
                         
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => toggleActive(transaction.id)}
-                          >
-                            <Play className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setEditingTransaction(transaction);
-                              setShowForm(true);
-                            }}
-                          >
-                            <Edit2 className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => deleteRecurringTransaction(transaction.id)}
-                            className="text-red-500 hover:text-red-600"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <p className={`font-medium text-sm ${
+                              isOverdue ? 'text-red-600' :
+                              isDue ? 'text-orange-600' :
+                              dueSoon ? 'text-blue-600' :
+                              'text-gray-600'
+                            }`}>
+                              {isOverdue ? `${Math.abs(daysUntilDue)} days overdue` :
+                               isDue ? 'Due today' :
+                               daysUntilDue === 1 ? 'Due tomorrow' :
+                               `Due in ${daysUntilDue} days`}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatDate(bill.next_due_date)}
+                            </p>
+                          </div>
+                          
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() => markAsPaid(bill)}
+                              className="bg-green-600 hover:bg-green-700 text-white"
+                            >
+                              <Check className="h-3 w-3 mr-1" />
+                              Mark Paid
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => skipThisMonth(bill)}
+                            >
+                              <X className="h-3 w-3 mr-1" />
+                              Skip
+                            </Button>
+                          </div>
                         </div>
                       </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                    </div>
+                  );
+                })}
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Tabs for different views */}
+        <Tabs defaultValue="all" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="all" className="flex items-center gap-2">
+              <Repeat className="h-4 w-4" />
+              All Recurring
+            </TabsTrigger>
+            <TabsTrigger value="bills" className="flex items-center gap-2">
+              <CreditCard className="h-4 w-4" />
+              Bills Only
+            </TabsTrigger>
+            <TabsTrigger value="income" className="flex items-center gap-2">
+              <DollarSign className="h-4 w-4" />
+              Income Only
+            </TabsTrigger>
+          </TabsList>
+
+          {/* All Recurring Transactions */}
+          <TabsContent value="all" className="space-y-6">
+            <div className="space-y-6">
+              <h2 className="text-xl font-semibold">All Active Recurring Transactions</h2>
+              
+              {activeTransactions.length > 0 ? (
+                <div className="grid gap-4">
+                  {activeTransactions.map((transaction) => {
+                    const daysUntilDue = getDaysUntilDue(transaction.next_due_date);
+                    const isDue = daysUntilDue <= 0;
+                    const isOverdue = daysUntilDue < 0;
+
+                    return (
+                      <Card key={transaction.id} className={`border-0 shadow-md bg-gradient-to-br from-card to-card/95 ${
+                        isDue ? 'ring-2 ring-orange-200' : ''
+                      }`}>
+                        <CardContent className="p-6">
+                          <div className="flex justify-between items-start mb-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-2">
+                                <div className={`w-3 h-3 rounded-full ${
+                                  transaction.type === 'income' ? 'bg-green-500' : 'bg-red-500'
+                                }`} />
+                                <h3 className="font-semibold text-lg">{transaction.name}</h3>
+                                <span className="text-sm bg-gray-100 px-2 py-1 rounded">
+                                  {getFrequencyLabel(transaction.frequency)}
+                                </span>
+                              </div>
+                              
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                <div>
+                                  <span className="text-muted-foreground">Category:</span>
+                                  <p className="font-medium">{transaction.category}</p>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Amount:</span>
+                                  <p className={`font-medium ${
+                                    transaction.type === 'income' ? 'text-green-600' : 'text-red-600'
+                                  }`}>
+                                    {transaction.type === 'income' ? '+' : '-'}{formatCurrency(transaction.amount)}
+                                  </p>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Next Due:</span>
+                                  <p className={`font-medium ${
+                                    isDue ? 'text-orange-600' : 'text-gray-700'
+                                  }`}>
+                                    {formatDate(transaction.next_due_date)}
+                                  </p>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">Status:</span>
+                                  <p className="font-medium">
+                                    {isOverdue ? (
+                                      <span className="text-red-600">Overdue</span>
+                                    ) : isDue ? (
+                                      <span className="text-orange-600">Due Today</span>
+                                    ) : (
+                                      <span className="text-gray-600">
+                                        {daysUntilDue === 1 ? 'Due tomorrow' : `Due in ${daysUntilDue} days`}
+                                      </span>
+                                    )}
+                                  </p>
+                                </div>
+                              </div>
+                              
+                              {transaction.note && (
+                                <p className="text-sm text-muted-foreground mt-2">{transaction.note}</p>
+                              )}
+                            </div>
+
+                            <div className="flex gap-2 ml-4">
+                              {transaction.type === 'expense' && isDue && (
+                                <Button
+                                  size="sm"
+                                  onClick={() => markAsPaid(transaction)}
+                                  className="bg-green-600 hover:bg-green-700 text-white"
+                                >
+                                  <Check className="h-3 w-3" />
+                                </Button>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => toggleActive(transaction.id)}
+                              >
+                                <Pause className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setEditingTransaction(transaction);
+                                  setShowForm(true);
+                                }}
+                              >
+                                <Edit2 className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => deleteRecurringTransaction(transaction.id)}
+                                className="text-red-500 hover:text-red-600"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+
+                          {isDue && (
+                            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center">
+                                  <Clock className="h-4 w-4 text-orange-500 mr-2" />
+                                  <span className="text-sm font-medium text-orange-700">
+                                    This {transaction.type} is {isOverdue ? 'overdue' : 'due today'}
+                                  </span>
+                                </div>
+                                {transaction.type === 'expense' && (
+                                  <div className="flex gap-2">
+                                    <Button
+                                      size="sm"
+                                      onClick={() => markAsPaid(transaction)}
+                                      className="bg-green-600 hover:bg-green-700 text-white"
+                                    >
+                                      <Check className="h-3 w-3 mr-1" />
+                                      Mark Paid
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => skipThisMonth(transaction)}
+                                    >
+                                      <X className="h-3 w-3 mr-1" />
+                                      Skip
+                                    </Button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              ) : (
+                <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+                  <CardContent className="text-center py-12">
+                    <Repeat className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">No recurring transactions yet</h3>
+                    <p className="text-muted-foreground mb-4">
+                      Set up automatic transactions for bills, salary, and other regular payments
+                    </p>
+                    <Button onClick={() => setShowForm(true)}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Create First Recurring Transaction
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
             </div>
-          )}
-        </div>
+          </TabsContent>
+
+          {/* Bills Only View */}
+          <TabsContent value="bills" className="space-y-6">
+            <div className="space-y-6">
+              <h2 className="text-xl font-semibold">Bills & Expenses</h2>
+              
+              {bills.length > 0 ? (
+                <div className="grid gap-4">
+                  {bills.map((bill) => {
+                    const daysUntilDue = getDaysUntilDue(bill.next_due_date);
+                    const isDue = daysUntilDue <= 0;
+                    const isOverdue = daysUntilDue < 0;
+                    const CategoryIcon = getCategoryIcon(bill.category);
+
+                    return (
+                      <Card key={bill.id} className={`border-0 shadow-md bg-gradient-to-br from-card to-card/95 ${
+                        isDue ? 'ring-2 ring-orange-200' : ''
+                      }`}>
+                        <CardContent className="p-6">
+                          <div className="flex justify-between items-start">
+                            <div className="flex items-center gap-4 flex-1">
+                              <CategoryIcon className="h-8 w-8 text-red-500" />
+                              <div className="flex-1">
+                                <div className="flex items-center gap-3 mb-2">
+                                  <h3 className="font-semibold text-lg">{bill.name}</h3>
+                                  <span className="text-sm bg-red-100 text-red-700 px-2 py-1 rounded">
+                                    {getFrequencyLabel(bill.frequency)}
+                                  </span>
+                                </div>
+                                
+                                <div className="grid grid-cols-3 gap-4 text-sm">
+                                  <div>
+                                    <span className="text-muted-foreground">Amount:</span>
+                                    <p className="font-medium text-red-600">
+                                      {formatCurrency(bill.amount)}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Due Date:</span>
+                                    <p className={`font-medium ${
+                                      isDue ? 'text-orange-600' : 'text-gray-700'
+                                    }`}>
+                                      {formatDate(bill.next_due_date)}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Status:</span>
+                                    <p className="font-medium">
+                                      {isOverdue ? (
+                                        <span className="text-red-600">Overdue</span>
+                                      ) : isDue ? (
+                                        <span className="text-orange-600">Due Today</span>
+                                      ) : (
+                                        <span className="text-gray-600">
+                                          {daysUntilDue === 1 ? 'Due tomorrow' : `Due in ${daysUntilDue} days`}
+                                        </span>
+                                      )}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex gap-2">
+                              {isDue && (
+                                <Button
+                                  size="sm"
+                                  onClick={() => markAsPaid(bill)}
+                                  className="bg-green-600 hover:bg-green-700 text-white"
+                                >
+                                  <Check className="h-3 w-3 mr-1" />
+                                  Mark Paid
+                                </Button>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setEditingTransaction(bill);
+                                  setShowForm(true);
+                                }}
+                              >
+                                <Edit2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              ) : (
+                <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+                  <CardContent className="text-center py-12">
+                    <CreditCard className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">No bills set up yet</h3>
+                    <p className="text-muted-foreground mb-4">
+                      Add your regular bills like rent, utilities, and credit card payments
+                    </p>
+                    <Button onClick={() => setShowForm(true)}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add First Bill
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </TabsContent>
+
+          {/* Income Only View */}
+          <TabsContent value="income" className="space-y-6">
+            <div className="space-y-6">
+              <h2 className="text-xl font-semibold">Recurring Income</h2>
+              
+              {incomeTransactions.length > 0 ? (
+                <div className="grid gap-4">
+                  {incomeTransactions.map((income) => {
+                    const daysUntilDue = getDaysUntilDue(income.next_due_date);
+
+                    return (
+                      <Card key={income.id} className="border-0 shadow-md bg-gradient-to-br from-green-50 to-green-100">
+                        <CardContent className="p-6">
+                          <div className="flex justify-between items-start">
+                            <div className="flex items-center gap-4 flex-1">
+                              <DollarSign className="h-8 w-8 text-green-500" />
+                              <div className="flex-1">
+                                <div className="flex items-center gap-3 mb-2">
+                                  <h3 className="font-semibold text-lg">{income.name}</h3>
+                                  <span className="text-sm bg-green-100 text-green-700 px-2 py-1 rounded">
+                                    {getFrequencyLabel(income.frequency)}
+                                  </span>
+                                </div>
+                                
+                                <div className="grid grid-cols-3 gap-4 text-sm">
+                                  <div>
+                                    <span className="text-muted-foreground">Amount:</span>
+                                    <p className="font-medium text-green-600">
+                                      +{formatCurrency(income.amount)}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Next Expected:</span>
+                                    <p className="font-medium text-gray-700">
+                                      {formatDate(income.next_due_date)}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">In:</span>
+                                    <p className="font-medium text-gray-600">
+                                      {daysUntilDue <= 0 ? 'Available now' :
+                                       daysUntilDue === 1 ? 'Tomorrow' :
+                                       `${daysUntilDue} days`}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setEditingTransaction(income);
+                                  setShowForm(true);
+                                }}
+                              >
+                                <Edit2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              ) : (
+                <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+                  <CardContent className="text-center py-12">
+                    <DollarSign className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">No recurring income set up</h3>
+                    <p className="text-muted-foreground mb-4">
+                      Add your regular income like salary, freelance payments, and investments
+                    </p>
+                    <Button onClick={() => setShowForm(true)}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add Recurring Income
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
+
+        {/* Inactive Transactions */}
+        {inactiveTransactions.length > 0 && (
+          <div className="mt-8">
+            <h3 className="text-lg font-semibold mb-4">Inactive Recurring Transactions</h3>
+            <div className="grid gap-4">
+              {inactiveTransactions.map((transaction) => (
+                <Card key={transaction.id} className="border-0 shadow-md bg-gradient-to-br from-gray-50 to-gray-100 opacity-75">
+                  <CardContent className="p-4">
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-3 h-3 rounded-full ${
+                          transaction.type === 'income' ? 'bg-green-300' : 'bg-red-300'
+                        }`} />
+                        <div>
+                          <h4 className="font-medium text-gray-700">{transaction.name}</h4>
+                          <p className="text-sm text-gray-500">
+                            {formatCurrency(transaction.amount)} • {getFrequencyLabel(transaction.frequency)}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => toggleActive(transaction.id)}
+                        >
+                          <Play className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setEditingTransaction(transaction);
+                            setShowForm(true);
+                          }}
+                        >
+                          <Edit2 className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => deleteRecurringTransaction(transaction.id)}
+                          className="text-red-500 hover:text-red-600"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Recurring Transaction Form */}
         {showForm && (
@@ -492,7 +956,7 @@ const RecurringTransactionsPage: React.FC = () => {
   );
 };
 
-// Recurring Transaction Form Component
+// Enhanced Recurring Transaction Form Component
 interface RecurringTransactionFormProps {
   transaction?: RecurringTransaction | null;
   onClose: () => void;
@@ -518,7 +982,8 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
     frequency: transaction?.frequency || '',
     start_date: transaction?.start_date || new Date().toISOString().split('T')[0],
     end_date: transaction?.end_date || '',
-    is_active: transaction?.is_active ?? true
+    is_active: transaction?.is_active ?? true,
+    reminder_days: transaction?.reminder_days || 3
   });
 
   const [loading, setLoading] = useState(false);
@@ -539,7 +1004,8 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
         frequency: formData.frequency,
         start_date: formData.start_date,
         end_date: formData.end_date || null,
-        is_active: formData.is_active
+        is_active: formData.is_active,
+        reminder_days: parseInt(formData.reminder_days.toString())
       };
 
       let response;
@@ -576,7 +1042,7 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
     }
   };
 
-  const handleInputChange = (field: string, value: string | boolean) => {
+  const handleInputChange = (field: string, value: string | boolean | number) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     if (error) setError('');
   };
@@ -617,7 +1083,7 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="income">Income</SelectItem>
-                  <SelectItem value="expense">Expense</SelectItem>
+                  <SelectItem value="expense">Bill/Expense</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -682,6 +1148,28 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
             </div>
           </div>
 
+          {/* Bill Reminder Settings */}
+          {formData.type === 'expense' && (
+            <div className="space-y-2">
+              <Label>Reminder Days Before Due</Label>
+              <Select value={formData.reminder_days.toString()} onValueChange={(value) => handleInputChange('reminder_days', parseInt(value))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select reminder days" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1 day before</SelectItem>
+                  <SelectItem value="3">3 days before</SelectItem>
+                  <SelectItem value="5">5 days before</SelectItem>
+                  <SelectItem value="7">7 days before</SelectItem>
+                  <SelectItem value="14">14 days before</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                You'll get notifications this many days before the bill is due
+              </p>
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label>End Date (Optional)</Label>
             <Input
@@ -724,7 +1212,7 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
               ) : (
                 <>
                   <Plus className="mr-2 h-4 w-4" />
-                  {isEditing ? 'Update' : 'Create'} Recurring Transaction
+                  {isEditing ? 'Update' : 'Create'} {formData.type === 'expense' ? 'Bill' : 'Recurring Transaction'}
                 </>
               )}
             </Button>
