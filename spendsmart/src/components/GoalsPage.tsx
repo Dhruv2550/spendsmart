@@ -260,34 +260,19 @@ const GoalsPage: React.FC = () => {
                 <Label>Category</Label>
                 <Select value={formData.category} onValueChange={(value) => setFormData(prev => ({ ...prev, category: value as InvestmentGoal['category'] }))}>
                   <SelectTrigger>
-                    {formData.category ? (
-                      <span className="flex items-center">
-                        {formData.category === 'house' && '🏠 House/Real Estate'}
-                        {formData.category === 'education' && '🎓 Education'}
-                        {formData.category === 'car' && '🚗 Vehicle'}
-                        {formData.category === 'vacation' && '✈️ Vacation/Travel'}
-                        {formData.category === 'wedding' && '💍 Wedding'}
-                        {formData.category === 'baby' && '👶 Baby/Family'}
-                        {formData.category === 'business' && '💼 Business/Startup'}
-                        {formData.category === 'retirement' && '🏦 Retirement'}
-                        {formData.category === 'emergency' && '🚨 Emergency Fund'}
-                        {formData.category === 'other' && '🎯 Other'}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">Select a category</span>
-                    )}
+                    <SelectValue placeholder="Select a category" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="house">🏠 House/Real Estate</SelectItem>
-                    <SelectItem value="education">🎓 Education</SelectItem>
-                    <SelectItem value="car">🚗 Vehicle</SelectItem>
-                    <SelectItem value="vacation">✈️ Vacation/Travel</SelectItem>
-                    <SelectItem value="wedding">💍 Wedding</SelectItem>
-                    <SelectItem value="baby">👶 Baby/Family</SelectItem>
-                    <SelectItem value="business">💼 Business/Startup</SelectItem>
-                    <SelectItem value="retirement">🏦 Retirement</SelectItem>
-                    <SelectItem value="emergency">🚨 Emergency Fund</SelectItem>
-                    <SelectItem value="other">🎯 Other</SelectItem>
+                    <SelectItem value="house">House/Real Estate</SelectItem>
+                    <SelectItem value="education">Education</SelectItem>
+                    <SelectItem value="car">Vehicle</SelectItem>
+                    <SelectItem value="vacation">Vacation/Travel</SelectItem>
+                    <SelectItem value="wedding">Wedding</SelectItem>
+                    <SelectItem value="baby">Baby/Family</SelectItem>
+                    <SelectItem value="business">Business/Startup</SelectItem>
+                    <SelectItem value="retirement">Retirement</SelectItem>
+                    <SelectItem value="emergency">Emergency Fund</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -353,11 +338,7 @@ const GoalsPage: React.FC = () => {
               <Label>Priority</Label>
               <Select value={formData.priority} onValueChange={(value) => setFormData(prev => ({ ...prev, priority: value as InvestmentGoal['priority'] }))}>
                 <SelectTrigger>
-                  {formData.priority ? (
-                    <span className="capitalize">{formData.priority} Priority</span>
-                  ) : (
-                    <span className="text-muted-foreground">Select priority</span>
-                  )}
+                  <SelectValue placeholder="Select priority" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="low">Low Priority</SelectItem>
@@ -475,16 +456,7 @@ const GoalsPage: React.FC = () => {
               <Label>Source</Label>
               <Select value={formData.source} onValueChange={(value) => setFormData(prev => ({ ...prev, source: value as InvestmentContribution['source'] }))}>
                 <SelectTrigger>
-                  {formData.source ? (
-                    <span>
-                      {formData.source === 'manual' && 'Manual Contribution'}
-                      {formData.source === 'auto' && 'Automatic Investment'}
-                      {formData.source === 'bonus' && 'Bonus/Windfall'}
-                      {formData.source === 'saved_expense' && 'Saved from Reduced Spending'}
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">Select source</span>
-                  )}
+                  <SelectValue placeholder="Select source" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="manual">Manual Contribution</SelectItem>
@@ -705,7 +677,7 @@ const GoalsPage: React.FC = () => {
                             }}
                           >
                             <Plus className="h-3 w-3 mr-1" />
-                            Add $
+                            Add Money
                           </Button>
                           <Button
                             size="sm"
@@ -907,67 +879,6 @@ const GoalsPage: React.FC = () => {
             )}
           </TabsContent>
 
-          {/* Goal Planner Tab */}
-          <TabsContent value="planner" className="space-y-6">
-            <h2 className="text-xl font-semibold">Smart Goal Planning</h2>
-            
-            <div className="grid md:grid-cols-2 gap-6">
-              <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Calculator className="h-5 w-5" />
-                    Goal Calculator
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <p className="text-sm text-muted-foreground">
-                      Use this calculator to determine how much you need to save monthly for any goal.
-                    </p>
-                    <div className="bg-blue-50 p-4 rounded-lg">
-                      <p className="text-sm text-blue-700">
-                        <strong>Quick Tip:</strong> The 50/30/20 rule suggests allocating 20% of income to savings and investments. 
-                        If you earn $5,000/month, that's $1,000 for all your investment goals combined.
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5" />
-                    Goal Prioritization
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <p className="text-sm text-muted-foreground">Recommended goal priority order:</p>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="w-6 h-6 rounded-full bg-red-100 text-red-600 text-xs flex items-center justify-center font-bold">1</span>
-                        <span>Emergency Fund (3-6 months expenses)</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="w-6 h-6 rounded-full bg-yellow-100 text-yellow-600 text-xs flex items-center justify-center font-bold">2</span>
-                        <span>High-interest debt payoff</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 text-xs flex items-center justify-center font-bold">3</span>
-                        <span>Retirement (401k match)</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="w-6 h-6 rounded-full bg-green-100 text-green-600 text-xs flex items-center justify-center font-bold">4</span>
-                        <span>Other goals (house, car, etc.)</span>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
           {/* Analytics Tab */}
           <TabsContent value="analytics" className="space-y-6">
             <h2 className="text-xl font-semibold">Goal Analytics</h2>
@@ -1037,6 +948,62 @@ const GoalsPage: React.FC = () => {
                   {goals.filter(g => g.isActive).length === 0 && (
                     <p className="text-center text-muted-foreground py-8">No active goals</p>
                   )}
+                </CardContent>
+              </Card>
+
+              {/* Goal Planning Tips */}
+              <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Calculator className="h-5 w-5" />
+                    Goal Calculator
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      Use this calculator to determine how much you need to save monthly for any goal.
+                    </p>
+                    <div className="bg-blue-50 p-4 rounded-lg">
+                      <p className="text-sm text-blue-700">
+                        <strong>Quick Tip:</strong> The 50/30/20 rule suggests allocating 20% of income to savings and investments. 
+                        If you earn $5,000/month, that's $1,000 for all your investment goals combined.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Priority Guide */}
+              <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5" />
+                    Goal Prioritization
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">Recommended goal priority order:</p>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="w-6 h-6 rounded-full bg-red-100 text-red-600 text-xs flex items-center justify-center font-bold">1</span>
+                        <span>Emergency Fund (3-6 months expenses)</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="w-6 h-6 rounded-full bg-yellow-100 text-yellow-600 text-xs flex items-center justify-center font-bold">2</span>
+                        <span>High-interest debt payoff</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 text-xs flex items-center justify-center font-bold">3</span>
+                        <span>Retirement (401k match)</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="w-6 h-6 rounded-full bg-green-100 text-green-600 text-xs flex items-center justify-center font-bold">4</span>
+                        <span>Other goals (house, car, etc.)</span>
+                      </div>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </div>

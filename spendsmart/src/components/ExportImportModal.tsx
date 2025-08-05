@@ -380,10 +380,10 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
             <div className="bg-blue-50 p-4 rounded-lg">
               <h3 className="font-medium text-blue-800 mb-2">Import Instructions</h3>
               <ul className="text-sm text-blue-700 space-y-1">
-                <li>• CSV file with columns: Date, Type, Category, Amount, Description</li>
-                <li>• Type must be either "income" or "expense"</li>
-                <li>• Date format: YYYY-MM-DD (e.g., 2024-01-15)</li>
-                <li>• Amount should be a number (e.g., 45.67)</li>
+                <li>- CSV file with columns: Date, Type, Category, Amount, Description</li>
+                <li>- Type must be either "income" or "expense"</li>
+                <li>- Date format: YYYY-MM-DD (e.g., 2024-01-15)</li>
+                <li>- Amount should be a number (e.g., 45.67)</li>
               </ul>
             </div>
 

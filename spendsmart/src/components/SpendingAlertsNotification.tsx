@@ -222,7 +222,7 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
                             <div className="flex-1">
                               <p className="font-medium text-sm text-gray-800">{alert.message}</p>
                               <p className="text-xs text-gray-600 mt-1">
-                                {alert.category} • {formatDate(alert.created_at)} • {alert.template_name} template
+                                {alert.category} - {formatDate(alert.created_at)} - {alert.template_name} template
                               </p>
                             </div>
                           </div>
@@ -270,7 +270,7 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
                             <div className="flex-1">
                               <p className="font-medium text-sm text-gray-600">{alert.message}</p>
                               <p className="text-xs text-gray-500 mt-1">
-                                {alert.category} • {formatDate(alert.created_at)} • {alert.template_name} template
+                                {alert.category} - {formatDate(alert.created_at)} - {alert.template_name} template
                               </p>
                             </div>
                           </div>

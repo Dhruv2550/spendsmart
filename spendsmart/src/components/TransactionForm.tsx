@@ -224,19 +224,7 @@ export const TransactionForm = ({ onClose, onTransactionAdded, editingTransactio
             <Label htmlFor="type" className="text-sm font-medium">Transaction Type</Label>
             <Select value={formData.type} onValueChange={(value) => handleInputChange("type", value)}>
               <SelectTrigger className="border-border/50 focus:border-primary transition-colors">
-                {formData.type === "income" ? (
-                  <span className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-income"></div>
-                    Income
-                  </span>
-                ) : formData.type === "expense" ? (
-                  <span className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-expense"></div>
-                    Expense
-                  </span>
-                ) : (
-                  <SelectValue placeholder="Select type" />
-                )}
+                <SelectValue placeholder="Select type" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="income">

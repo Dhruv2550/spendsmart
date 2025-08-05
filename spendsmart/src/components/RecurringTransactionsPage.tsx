@@ -453,7 +453,7 @@ const RecurringTransactionsPage: React.FC = () => {
                           <div>
                             <h4 className="font-medium">{bill.name}</h4>
                             <p className="text-sm text-muted-foreground">
-                              {formatCurrency(bill.amount)} • {bill.category} • {getFrequencyLabel(bill.frequency)}
+                              {formatCurrency(bill.amount)} - {bill.category} - {getFrequencyLabel(bill.frequency)}
                             </p>
                           </div>
                         </div>
@@ -895,7 +895,7 @@ const RecurringTransactionsPage: React.FC = () => {
                         <div>
                           <h4 className="font-medium text-gray-700">{transaction.name}</h4>
                           <p className="text-sm text-gray-500">
-                            {formatCurrency(transaction.amount)} • {getFrequencyLabel(transaction.frequency)}
+                            {formatCurrency(transaction.amount)} - {getFrequencyLabel(transaction.frequency)}
                           </p>
                         </div>
                       </div>

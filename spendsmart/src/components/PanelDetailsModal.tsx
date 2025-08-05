@@ -1,4 +1,4 @@
-// src/components/PanelDetailsModal.tsx - Corrected for your data structure
+// src/components/PanelDetailsModal.tsx
 import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -103,7 +103,7 @@ export const PanelDetailsModal: React.FC<PanelDetailsModalProps> = ({
                 <div key={transaction.id} className="flex justify-between items-center p-2 bg-green-50 rounded-lg">
                   <div>
                     <div className="font-medium text-sm">{transaction.note}</div>
-                    <div className="text-xs text-gray-500">{transaction.category} • {formatDate(transaction.date)}</div>
+                    <div className="text-xs text-gray-500">{transaction.category} - {formatDate(transaction.date)}</div>
                   </div>
                   <div className="font-medium text-green-600">{formatCurrency(transaction.amount)}</div>
                 </div>
@@ -177,7 +177,7 @@ export const PanelDetailsModal: React.FC<PanelDetailsModalProps> = ({
                 <div key={transaction.id} className="flex justify-between items-center p-2 bg-red-50 rounded-lg">
                   <div>
                     <div className="font-medium text-sm">{transaction.note}</div>
-                    <div className="text-xs text-gray-500">{transaction.category} • {formatDate(transaction.date)}</div>
+                    <div className="text-xs text-gray-500">{transaction.category} - {formatDate(transaction.date)}</div>
                   </div>
                   <div className="font-medium text-red-600">{formatCurrency(transaction.amount)}</div>
                 </div>
@@ -198,7 +198,10 @@ export const PanelDetailsModal: React.FC<PanelDetailsModalProps> = ({
       <div className="space-y-4">
         <Card>
           <CardHeader>
-
+            <CardTitle className="text-sm font-medium flex items-center">
+              <Target className={`h-4 w-4 mr-2 ${isOverBudget ? 'text-red-500' : 'text-green-500'}`} />
+              Budget Status Analysis
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -355,7 +358,7 @@ export const PanelDetailsModal: React.FC<PanelDetailsModalProps> = ({
     switch (panelType) {
       case 'income': return 'Income Details';
       case 'expenses': return 'Expense Details';
-      case 'budget': return 'Limit Status Details';
+      case 'budget': return 'Budget Status Details';
       case 'savings': return 'Savings Goal Details';
       default: return 'Details';
     }

@@ -442,15 +442,15 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
               <div className="space-y-2">
                 <h4 className="font-medium">Features</h4>
                 <ul className="text-sm text-muted-foreground space-y-1">
-                  <li>• Expense & Income Tracking</li>
-                  <li>• Category Management</li>
-                  <li>• Budget Monitoring</li>
-                  <li>• Visual Reports & Analytics</li>
-                  <li>• CSV Export/Import</li>
-                  <li>• Dark/Light Mode</li>
-                  <li>• Database Persistence</li>
-                  <li>• AWS Deployment Ready</li>
-                  <li>• Spending Alerts & Notifications</li>
+                  <li>- Expense & Income Tracking</li>
+                  <li>- Category Management</li>
+                  <li>- Budget Monitoring</li>
+                  <li>- Visual Reports & Analytics</li>
+                  <li>- CSV Export/Import</li>
+                  <li>- Dark/Light Mode</li>
+                  <li>- Database Persistence</li>
+                  <li>- AWS Deployment Ready</li>
+                  <li>- Spending Alerts & Notifications</li>
                 </ul>
               </div>
               
