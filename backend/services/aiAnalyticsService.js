@@ -16,7 +16,7 @@ class AIAnalyticsService {
 
   async generateSpendingPredictions(userId = null, months = 3) {
     try {
-      console.log('🔮 Generating enhanced spending predictions...');
+      console.log('Generating enhanced spending predictions...');
       
       // Get more historical data for better predictions (last 12 months)
       const twelveMonthsAgo = new Date();
@@ -444,7 +444,7 @@ class AIAnalyticsService {
 
   async detectSpendingAnomalies(userId = null, days = 30) {
     try {
-      console.log('🚨 Detecting spending anomalies with enhanced algorithms...');
+      console.log('Detecting spending anomalies with enhanced algorithms...');
       
       // Get recent transactions
       const endDate = new Date().toISOString().split('T')[0];
@@ -775,9 +775,9 @@ class AIAnalyticsService {
       
       // Overall spending trend insight
       if (nextMonth.totalPredicted > historicalAvg * 1.15) {
-        insights.push(`⚠️ Next month's forecast is significantly higher than usual - consider reducing spending`);
+        insights.push(`Next month's forecast is significantly higher than usual - consider reducing spending`);
       } else if (nextMonth.totalPredicted < historicalAvg * 0.85) {
-        insights.push(`✅ Next month's forecast shows reduced spending - you're on track for savings`);
+        insights.push(`Next month's forecast shows reduced spending - you're on track for savings`);
       }
 
       // Category-specific insights
@@ -790,7 +790,7 @@ class AIAnalyticsService {
         .sort((a, b) => Math.abs(b.growth) - Math.abs(a.growth));
 
       if (categoryGrowth.length > 0 && Math.abs(categoryGrowth[0].growth) > 10) {
-        insights.push(`📈 ${categoryGrowth[0].category} shows strongest ${categoryGrowth[0].growth > 0 ? 'growth' : 'decline'} trend at ${Math.abs(categoryGrowth[0].growth).toFixed(1)}% per month`);
+        insights.push(`${categoryGrowth[0].category} shows strongest ${categoryGrowth[0].growth > 0 ? 'growth' : 'decline'} trend at ${Math.abs(categoryGrowth[0].growth).toFixed(1)}% per month`);
       }
 
       // Seasonal insights
@@ -801,7 +801,7 @@ class AIAnalyticsService {
       const highSeasonalCategories = seasonalCategories.filter(cat => seasonalTrends[nextMonthNum][cat] > 1.3);
       
       if (highSeasonalCategories.length > 0) {
-        insights.push(`🗓️ Seasonal alert: ${highSeasonalCategories[0]} typically increases by ${((seasonalTrends[nextMonthNum][highSeasonalCategories[0]] - 1) * 100).toFixed(0)}% in ${nextMonth.monthName}`);
+        insights.push(`Seasonal alert: ${highSeasonalCategories[0]} typically increases by ${((seasonalTrends[nextMonthNum][highSeasonalCategories[0]] - 1) * 100).toFixed(0)}% in ${nextMonth.monthName}`);
       }
     }
 

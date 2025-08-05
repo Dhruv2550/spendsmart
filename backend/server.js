@@ -665,7 +665,7 @@ app.get('/api/analytics/insights', async (req, res) => {
   try {
     const { userId, template = 'Default' } = req.query;
     
-    console.log('🧠 Generating comprehensive AI insights...');
+    console.log('Generating comprehensive AI insights...');
     
     // Run all AI analyses in parallel for better performance
     const [predictions, anomalies, recommendations] = await Promise.all([
@@ -727,25 +727,25 @@ const startRecurringProcessor = () => {
   // Process recurring transactions every hour
   recurringProcessInterval = setInterval(async () => {
     try {
-      console.log('🔄 Checking for due recurring transactions...');
+      console.log('Checking for due recurring transactions...');
       const processed = await db.processRecurringTransactions();
       
       if (processed.length > 0) {
-        console.log(`✅ Auto-processed ${processed.length} recurring transactions`);
+        console.log(`Auto-processed ${processed.length} recurring transactions`);
       }
     } catch (error) {
-      console.error('❌ Error in recurring transaction processor:', error);
+      console.error('Error in recurring transaction processor:', error);
     }
   }, 60 * 60 * 1000); // Run every hour
   
-  console.log('🤖 Recurring transaction processor started');
+  console.log('Recurring transaction processor started');
 };
 
 // Stop background processing
 const stopRecurringProcessor = () => {
   if (recurringProcessInterval) {
     clearInterval(recurringProcessInterval);
-    console.log('🛑 Recurring transaction processor stopped');
+    console.log('Recurring transaction processor stopped');
   }
 };
 
@@ -783,7 +783,7 @@ const startServer = async () => {
     console.log(`   PATCH  /api/alerts/:id/read - Mark alert as read`);
     console.log(`   PATCH  /api/alerts/:id/dismiss - Dismiss alert`);
     console.log(`   PATCH  /api/alerts/dismiss-all/:month - Dismiss all alerts for month`);
-    console.log('🤖 AI Analytics API endpoints:');
+    console.log('AI Analytics API endpoints:');
     console.log('   GET    /api/analytics/predictions - Get spending predictions');
     console.log('   GET    /api/analytics/anomalies - Detect spending anomalies');
     console.log('   GET    /api/analytics/recommendations - Get budget recommendations');

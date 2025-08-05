@@ -20,8 +20,8 @@ const init = async () => {
       Limit: 1
     }).promise();
     
-    console.log('🌩️  Connected to DynamoDB');
-    console.log(`📊 Table: ${TABLE_NAME}`);
+    console.log('Connected to DynamoDB');
+    console.log(`Table: ${TABLE_NAME}`);
     return Promise.resolve();
   } catch (error) {
     console.error('DynamoDB connection failed:', error.message);

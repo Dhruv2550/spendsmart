@@ -279,7 +279,7 @@ const getTransactionsByMonth = (month) => {
           ...row,
           amount: parseFloat(row.amount)
         }));
-        console.log(`📅 Retrieved ${transactions.length} transactions for ${month}`);
+        console.log(`Retrieved ${transactions.length} transactions for ${month}`);
         resolve(transactions);
       }
     });
@@ -300,7 +300,7 @@ const getTransactionsByDateRange = (startDate, endDate) => {
           ...row,
           amount: parseFloat(row.amount)
         }));
-        console.log(`📅 Retrieved ${transactions.length} transactions from ${startDate} to ${endDate}`);
+        console.log(`Retrieved ${transactions.length} transactions from ${startDate} to ${endDate}`);
         resolve(transactions);
       }
     });
