@@ -1,6 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Button } from "./ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
-import { TrendingUp, BarChart3, Brain, Calendar, Clock, AlertTriangle, CheckCircle, TrendingDown, Activity } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import { TrendingUp, BarChart3, Brain, Calendar, Clock, AlertTriangle, CheckCircle, TrendingDown, Activity, FileText, Download, Printer, Mail, Settings } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 
 interface AnalyticsPageProps {
@@ -50,6 +52,8 @@ interface CategoryTrendData {
 const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [generatingReport, setGeneratingReport] = useState(false);
   
   // Add selected month state - defaults to current month
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -370,6 +374,447 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
     };
   };
 
+  // Generate Monthly Report HTML for PDF export
+  const generateReportHTML = () => {
+    const selectedMonthTransactions = getSelectedMonthTransactions();
+    const stats = getSelectedMonthStats();
+    const healthScore = getFinancialHealthScore();
+    const spendingPatterns = getSpendingPatterns();
+    const categoryTrends = getCategoryTrends();
+    const spendingVelocity = getSpendingVelocity();
+    
+    // Category breakdown
+    const categoryBreakdown = selectedMonthTransactions
+      .filter(t => t.type === 'expense')
+      .reduce((acc, t) => {
+        acc[t.category] = (acc[t.category] || 0) + t.amount;
+        return acc;
+      }, {} as Record<string, number>);
+
+    const sortedCategories = Object.entries(categoryBreakdown)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 10);
+
+    const monthName = new Date(selectedMonth + '-01').toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'long' 
+    });
+
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>SpendSmart Monthly Report - ${monthName}</title>
+        <style>
+          body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            line-height: 1.6; 
+            color: #333; 
+            max-width: 800px; 
+            margin: 0 auto; 
+            padding: 20px;
+            background: #fff;
+          }
+          .header { 
+            text-align: center; 
+            border-bottom: 3px solid #3b82f6; 
+            padding-bottom: 20px; 
+            margin-bottom: 30px; 
+          }
+          .header h1 { 
+            color: #1e40af; 
+            margin: 0; 
+            font-size: 2.5em; 
+          }
+          .header p { 
+            color: #6b7280; 
+            margin: 10px 0 0 0; 
+            font-size: 1.1em; 
+          }
+          .summary-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); 
+            gap: 20px; 
+            margin-bottom: 30px; 
+          }
+          .summary-card { 
+            background: #f8fafc; 
+            border: 1px solid #e2e8f0; 
+            border-radius: 8px; 
+            padding: 20px; 
+            text-align: center; 
+          }
+          .summary-card h3 { 
+            margin: 0 0 10px 0; 
+            color: #64748b; 
+            font-size: 0.9em; 
+            text-transform: uppercase; 
+            letter-spacing: 0.5px; 
+          }
+          .summary-card .value { 
+            font-size: 1.8em; 
+            font-weight: bold; 
+            margin: 0; 
+          }
+          .summary-card .subtitle { 
+            font-size: 0.8em; 
+            color: #6b7280; 
+            margin: 5px 0 0 0; 
+          }
+          .income { color: #059669; }
+          .expense { color: #dc2626; }
+          .savings { color: #2563eb; }
+          .neutral { color: #374151; }
+          
+          .section { 
+            margin-bottom: 40px; 
+          }
+          .section h2 { 
+            color: #1e40af; 
+            border-bottom: 2px solid #e2e8f0; 
+            padding-bottom: 10px; 
+            margin-bottom: 20px; 
+          }
+          
+          .health-score { 
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); 
+            border-radius: 12px; 
+            padding: 25px; 
+            text-align: center; 
+            margin-bottom: 30px; 
+          }
+          .health-score .score { 
+            font-size: 3em; 
+            font-weight: bold; 
+            margin: 0; 
+          }
+          .health-score .label { 
+            background: #3b82f6; 
+            color: white; 
+            padding: 8px 16px; 
+            border-radius: 20px; 
+            display: inline-block; 
+            margin-top: 10px; 
+            font-weight: 500; 
+          }
+          
+          .category-list { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); 
+            gap: 15px; 
+          }
+          .category-item { 
+            background: #f8fafc; 
+            border: 1px solid #e2e8f0; 
+            border-radius: 8px; 
+            padding: 15px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+          }
+          .category-item .name { 
+            font-weight: 500; 
+          }
+          .category-item .amount { 
+            color: #dc2626; 
+            font-weight: bold; 
+          }
+          
+          .patterns-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); 
+            gap: 15px; 
+          }
+          .pattern-item { 
+            background: #f8fafc; 
+            border: 1px solid #e2e8f0; 
+            border-radius: 8px; 
+            padding: 15px; 
+            text-align: center; 
+          }
+          .pattern-item .day { 
+            font-weight: 500; 
+            margin-bottom: 8px; 
+          }
+          .pattern-item .amount { 
+            font-size: 1.2em; 
+            font-weight: bold; 
+            color: #2563eb; 
+          }
+          .pattern-item .count { 
+            font-size: 0.8em; 
+            color: #6b7280; 
+            margin-top: 5px; 
+          }
+          
+          .insights-grid { 
+            display: grid; 
+            gap: 15px; 
+          }
+          .insight-item { 
+            background: #f0f9ff; 
+            border: 1px solid #bae6fd; 
+            border-radius: 8px; 
+            padding: 15px; 
+          }
+          .insight-item.warning { 
+            background: #fef3c7; 
+            border-color: #fde68a; 
+          }
+          .insight-item.positive { 
+            background: #d1fae5; 
+            border-color: #a7f3d0; 
+          }
+          .insight-title { 
+            font-weight: 600; 
+            margin-bottom: 5px; 
+          }
+          .insight-description { 
+            font-size: 0.9em; 
+            color: #4b5563; 
+          }
+          
+          .footer { 
+            text-align: center; 
+            margin-top: 50px; 
+            padding-top: 20px; 
+            border-top: 1px solid #e2e8f0; 
+            color: #6b7280; 
+            font-size: 0.9em; 
+          }
+          
+          @media print {
+            body { padding: 0; }
+            .no-print { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>SpendSmart Monthly Report</h1>
+          <p>Financial Analytics for ${monthName}</p>
+          <p style="font-size: 0.9em; color: #9ca3af;">Generated on ${new Date().toLocaleDateString()}</p>
+        </div>
+
+        <!-- Executive Summary -->
+        <div class="summary-grid">
+          <div class="summary-card">
+            <h3>Total Income</h3>
+            <p class="value income">$${stats.thisMonthIncome.toLocaleString()}</p>
+            <p class="subtitle">${stats.averageDailyIncome}/day average</p>
+          </div>
+          <div class="summary-card">
+            <h3>Total Expenses</h3>
+            <p class="value expense">$${stats.thisMonthExpenses.toLocaleString()}</p>
+            <p class="subtitle">${stats.averageDailyExpenses}/day average</p>
+          </div>
+          <div class="summary-card">
+            <h3>Net Savings</h3>
+            <p class="value ${stats.thisMonthNet >= 0 ? 'savings' : 'expense'}">$${stats.thisMonthNet.toLocaleString()}</p>
+            <p class="subtitle">${stats.savingsGoalProgress.toFixed(1)}% of goal</p>
+          </div>
+          <div class="summary-card">
+            <h3>Transactions</h3>
+            <p class="value neutral">${stats.transactionCount}</p>
+            <p class="subtitle">${stats.daysPassed} active days</p>
+          </div>
+        </div>
+
+        <!-- Financial Health Score -->
+        <div class="health-score">
+          <p class="score ${healthScore >= 80 ? 'income' : healthScore >= 60 ? 'savings' : healthScore >= 40 ? 'neutral' : 'expense'}">${healthScore}/100</p>
+          <div class="label">
+            ${healthScore >= 80 ? 'Excellent' : healthScore >= 60 ? 'Good' : healthScore >= 40 ? 'Fair' : 'Needs Improvement'} Financial Health
+          </div>
+        </div>
+
+        <!-- Top Expense Categories -->
+        <div class="section">
+          <h2>Top Spending Categories</h2>
+          <div class="category-list">
+            ${sortedCategories.map(([category, amount]) => `
+              <div class="category-item">
+                <div>
+                  <div class="name">${category}</div>
+                  <div style="font-size: 0.8em; color: #6b7280;">
+                    ${((amount / stats.thisMonthExpenses) * 100).toFixed(1)}% of total expenses
+                  </div>
+                </div>
+                <div class="amount">$${amount.toLocaleString()}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <!-- Spending Patterns -->
+        <div class="section">
+          <h2>Weekly Spending Patterns</h2>
+          <div class="patterns-grid">
+            ${spendingPatterns.map(pattern => `
+              <div class="pattern-item">
+                <div class="day">${pattern.dayOfWeek}</div>
+                <div class="amount">$${pattern.averageSpending.toFixed(0)}</div>
+                <div class="count">${pattern.transactionCount} transactions</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <!-- Key Insights -->
+        <div class="section">
+          <h2>Financial Insights</h2>
+          <div class="insights-grid">
+            ${categoryTrends.slice(0, 5).map(trend => `
+              <div class="insight-item ${trend.trend === 'up' ? 'warning' : trend.trend === 'down' ? 'positive' : ''}">
+                <div class="insight-title">${trend.category} Spending</div>
+                <div class="insight-description">
+                  ${trend.trend === 'up' ? 
+                    `Increased by ${Math.abs(trend.changePercent).toFixed(1)}% vs previous month. Consider reviewing this category.` :
+                    trend.trend === 'down' ?
+                    `Decreased by ${Math.abs(trend.changePercent).toFixed(1)}% vs previous month. Great improvement!` :
+                    `Stable spending pattern compared to previous month.`
+                  }
+                </div>
+              </div>
+            `).join('')}
+            
+            <div class="insight-item ${spendingVelocity.projectedMonthlySpend > monthlySavings && spendingVelocity.isCurrentMonth ? 'warning' : 'positive'}">
+              <div class="insight-title">Spending Velocity</div>
+              <div class="insight-description">
+                Daily spending rate: $${spendingVelocity.dailyBurnRate.toFixed(0)}/day. 
+                ${spendingVelocity.projectedMonthlySpend > monthlySavings && spendingVelocity.isCurrentMonth ? 
+                  'Consider slowing spending to meet budget goals.' : 
+                  'Spending pace is sustainable for your budget goals.'
+                }
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Additional Statistics -->
+        <div class="section">
+          <h2>Additional Statistics</h2>
+          <div class="summary-grid">
+            <div class="summary-card">
+              <h3>Savings Rate</h3>
+              <p class="value ${stats.thisMonthIncome > 0 ? ((stats.thisMonthNet / stats.thisMonthIncome) * 100) >= 20 ? 'income' : 'neutral' : 'neutral'}">
+                ${stats.thisMonthIncome > 0 ? ((stats.thisMonthNet / stats.thisMonthIncome) * 100).toFixed(1) : '0'}%
+              </p>
+              <p class="subtitle">of income saved</p>
+            </div>
+            <div class="summary-card">
+              <h3>Largest Expense</h3>
+              <p class="value expense">$${Math.max(...selectedMonthTransactions.filter(t => t.type === 'expense').map(t => t.amount), 0).toLocaleString()}</p>
+              <p class="subtitle">single transaction</p>
+            </div>
+            <div class="summary-card">
+              <h3>Weekend Spending</h3>
+              <p class="value neutral">$${spendingPatterns.filter(p => p.dayOfWeek === 'Saturday' || p.dayOfWeek === 'Sunday').reduce((sum, p) => sum + p.averageSpending, 0).toFixed(0)}</p>
+              <p class="subtitle">average per weekend</p>
+            </div>
+            <div class="summary-card">
+              <h3>Most Active Day</h3>
+              <p class="value neutral">${spendingPatterns.reduce((max, p) => p.transactionCount > max.transactionCount ? p : max, spendingPatterns[0])?.dayOfWeek || 'N/A'}</p>
+              <p class="subtitle">for transactions</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer">
+          <p>Generated by SpendSmart Budget App</p>
+          <p>Report Date: ${new Date().toLocaleDateString()} | Analysis Period: ${monthName}</p>
+        </div>
+      </body>
+      </html>
+    `;
+  };
+
+  // Export report as PDF
+  const exportReportAsPDF = () => {
+    setGeneratingReport(true);
+    
+    const reportHTML = generateReportHTML();
+    const monthName = new Date(selectedMonth + '-01').toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'long' 
+    }).replace(' ', '-');
+    
+    // Create a new window with the report content
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(reportHTML);
+      printWindow.document.close();
+      
+      // Wait for content to load, then print
+      printWindow.onload = () => {
+        setTimeout(() => {
+          printWindow.print();
+          setGeneratingReport(false);
+          setShowReportModal(false);
+        }, 500);
+      };
+    } else {
+      // Fallback: create downloadable HTML file
+      const blob = new Blob([reportHTML], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `SpendSmart-Monthly-Report-${monthName}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setGeneratingReport(false);
+      setShowReportModal(false);
+    }
+  };
+
+  // Export raw data as CSV
+  const exportDataAsCSV = () => {
+    const selectedMonthTransactions = getSelectedMonthTransactions();
+    const stats = getSelectedMonthStats();
+    
+    const csvData = [
+      ['SpendSmart Monthly Report Data'],
+      [`Month: ${new Date(selectedMonth + '-01').toLocaleDateString('en-US', { year: 'numeric', month: 'long' })}`],
+      [''],
+      ['Summary'],
+      ['Metric', 'Value'],
+      ['Total Income', stats.thisMonthIncome],
+      ['Total Expenses', stats.thisMonthExpenses],
+      ['Net Savings', stats.thisMonthNet],
+      ['Transaction Count', stats.transactionCount],
+      ['Average Daily Income', stats.averageDailyIncome],
+      ['Average Daily Expenses', stats.averageDailyExpenses],
+      ['Financial Health Score', getFinancialHealthScore()],
+      [''],
+      ['Transactions'],
+      ['Date', 'Type', 'Category', 'Amount', 'Description'],
+      ...selectedMonthTransactions.map(t => [
+        t.date,
+        t.type,
+        t.category,
+        t.amount,
+        t.note || ''
+      ])
+    ];
+
+    const csvContent = csvData.map(row => 
+      row.map(cell => typeof cell === 'string' && cell.includes(',') ? `"${cell}"` : cell).join(',')
+    ).join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `SpendSmart-Data-${selectedMonth}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setShowReportModal(false);
+  };
+
   const healthScore = getFinancialHealthScore();
   const spendingPatterns = getSpendingPatterns();
   const categoryTrends = getCategoryTrends();
@@ -424,7 +869,7 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
           <p className="text-muted-foreground">Deep insights into your spending behavior and financial patterns</p>
         </div>
 
-        {/* Month Selector */}
+        {/* Month Selector and Report Export */}
         <div className="flex justify-between items-center mb-8">
           <div className="flex items-center gap-2">
             <label className="text-sm font-medium">Analyze Month:</label>
@@ -453,12 +898,21 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
             </select>
           </div>
           
-          {selectedMonth !== currentMonth && (
-            <div className="text-sm text-muted-foreground">
-              Viewing historical data for {new Date(selectedMonth + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-            </div>
-          )}
+          {/* Monthly Report Export Button */}
+          <Button
+            onClick={() => setShowReportModal(true)}
+            className="flex items-center gap-2 bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary"
+          >
+            <FileText className="h-4 w-4" />
+            Generate Monthly Report
+          </Button>
         </div>
+
+        {selectedMonth !== currentMonth && (
+          <div className="mb-6 text-sm text-muted-foreground bg-blue-50 border border-blue-200 rounded-lg p-3">
+            📅 Viewing historical data for {new Date(selectedMonth + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+          </div>
+        )}
 
         <Tabs defaultValue="insights" className="space-y-6">
           <TabsList className="grid w-full grid-cols-3">
@@ -826,7 +1280,7 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
                             
                             {/* X-axis labels */}
                             {monthlyTrendData.map((d, i) => (
-                              <text key={i} x={0 + i * xStep} y={310} textAnchor="middle" className="text-xs fill-gray-600">
+                              <text key={i} x={40 + i * xStep} y={310} textAnchor="middle" className="text-xs fill-gray-600">
                                 {d.monthLabel}
                               </text>
                             ))}
@@ -1101,6 +1555,92 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
             </div>
           </TabsContent>
         </Tabs>
+
+        {/* Monthly Report Export Modal */}
+        {showReportModal && (
+          <Dialog open={showReportModal} onOpenChange={setShowReportModal}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Export Monthly Report
+                </DialogTitle>
+              </DialogHeader>
+              
+              <div className="space-y-6">
+                <div className="text-center p-4 bg-blue-50 rounded-lg">
+                  <Calendar className="h-8 w-8 text-blue-600 mx-auto mb-2" />
+                  <h3 className="font-semibold text-blue-800">
+                    {new Date(selectedMonth + '-01').toLocaleDateString('en-US', { 
+                      year: 'numeric', 
+                      month: 'long' 
+                    })} Report
+                  </h3>
+                  <p className="text-sm text-blue-600 mt-1">
+                    Complete financial analysis with insights and recommendations
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="text-center p-3 bg-gray-50 rounded-lg">
+                      <div className="text-sm text-gray-600">Transactions</div>
+                      <div className="font-bold text-lg">{selectedMonthStats.transactionCount}</div>
+                    </div>
+                    <div className="text-center p-3 bg-gray-50 rounded-lg">
+                      <div className="text-sm text-gray-600">Health Score</div>
+                      <div className="font-bold text-lg">{healthScore}/100</div>
+                    </div>
+                  </div>
+
+                  <div className="text-sm text-gray-600">
+                    <h4 className="font-medium mb-2">Report includes:</h4>
+                    <ul className="space-y-1 text-xs">
+                      <li>• Executive summary with key metrics</li>
+                      <li>• Financial health score and analysis</li>
+                      <li>• Category breakdown and spending patterns</li>
+                      <li>• Smart insights and recommendations</li>
+                      <li>• Comparison to previous month (if available)</li>
+                      <li>• Visual charts and spending heatmap</li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <Button
+                    onClick={exportReportAsPDF}
+                    disabled={generatingReport}
+                    className="flex-1"
+                  >
+                    {generatingReport ? (
+                      <>
+                        <Printer className="h-4 w-4 mr-2 animate-pulse" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Printer className="h-4 w-4 mr-2" />
+                        PDF Report
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={exportDataAsCSV}
+                    className="flex-1"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    CSV Data
+                  </Button>
+                </div>
+
+                <div className="text-xs text-center text-gray-500 pt-2 border-t">
+                  PDF will open in a new window for printing or saving
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
     </div>
   );
