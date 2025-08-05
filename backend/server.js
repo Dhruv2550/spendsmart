@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const db = require('./database'); // Import our database abstraction layer
+const aiAnalyticsService = require('./services/aiAnalyticsService');
 
 const app = express();
 const PORT = 3001;
@@ -604,6 +605,112 @@ app.patch('/api/alerts/dismiss-all/:month', async (req, res) => {
   }
 });
 
+// ============================================
+// AI ANALYTICS ROUTES
+// ============================================
+
+// Get spending predictions
+app.get('/api/analytics/predictions', async (req, res) => {
+  try {
+    const { months = 3, userId } = req.query;
+    
+    const predictions = await aiAnalyticsService.generateSpendingPredictions(
+      userId, 
+      parseInt(months)
+    );
+    
+    res.json(predictions);
+  } catch (error) {
+    console.error('Error getting spending predictions:', error);
+    res.status(500).json({ error: 'Failed to generate spending predictions' });
+  }
+});
+
+// Detect spending anomalies
+app.get('/api/analytics/anomalies', async (req, res) => {
+  try {
+    const { days = 30, userId } = req.query;
+    
+    const anomalies = await aiAnalyticsService.detectSpendingAnomalies(
+      userId, 
+      parseInt(days)
+    );
+    
+    res.json(anomalies);
+  } catch (error) {
+    console.error('Error detecting anomalies:', error);
+    res.status(500).json({ error: 'Failed to detect spending anomalies' });
+  }
+});
+
+// Get budget recommendations
+app.get('/api/analytics/recommendations', async (req, res) => {
+  try {
+    const { userId, template = 'Default' } = req.query;
+    
+    const recommendations = await aiAnalyticsService.generateBudgetRecommendations(
+      userId, 
+      template
+    );
+    
+    res.json(recommendations);
+  } catch (error) {
+    console.error('Error generating recommendations:', error);
+    res.status(500).json({ error: 'Failed to generate budget recommendations' });
+  }
+});
+
+// Get comprehensive AI insights (combines all AI features)
+app.get('/api/analytics/insights', async (req, res) => {
+  try {
+    const { userId, template = 'Default' } = req.query;
+    
+    console.log('🧠 Generating comprehensive AI insights...');
+    
+    // Run all AI analyses in parallel for better performance
+    const [predictions, anomalies, recommendations] = await Promise.all([
+      aiAnalyticsService.generateSpendingPredictions(userId, 2),
+      aiAnalyticsService.detectSpendingAnomalies(userId, 30),
+      aiAnalyticsService.generateBudgetRecommendations(userId, template)
+    ]);
+    
+    // Combine insights
+    const insights = {
+      success: true,
+      predictions: {
+        success: predictions.success,
+        data: predictions.success ? predictions.predictions : [],
+        confidence: predictions.confidence || 0,
+        insights: predictions.insights || []
+      },
+      anomalies: {
+        success: anomalies.success,
+        data: anomalies.success ? anomalies.anomalies.slice(0, 10) : [], // Top 10
+        summary: anomalies.summary || {}
+      },
+      recommendations: {
+        success: recommendations.success,
+        data: recommendations.success ? recommendations.recommendations.slice(0, 10) : [], // Top 10
+        summary: recommendations.summary || {}
+      },
+      summary: {
+        totalInsights: (predictions.success ? predictions.predictions.length : 0) +
+                      (anomalies.success ? anomalies.anomalies.length : 0) +
+                      (recommendations.success ? recommendations.recommendations.length : 0),
+        highPriorityItems: (anomalies.success ? anomalies.summary.highSeverity || 0 : 0) +
+                          (recommendations.success ? recommendations.summary.highPriority || 0 : 0),
+        potentialSavings: recommendations.success ? recommendations.summary.potentialMonthlySavings || 0 : 0
+      },
+      generatedAt: new Date().toISOString()
+    };
+    
+    res.json(insights);
+  } catch (error) {
+    console.error('Error generating comprehensive insights:', error);
+    res.status(500).json({ error: 'Failed to generate AI insights' });
+  }
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
@@ -676,6 +783,11 @@ const startServer = async () => {
     console.log(`   PATCH  /api/alerts/:id/read - Mark alert as read`);
     console.log(`   PATCH  /api/alerts/:id/dismiss - Dismiss alert`);
     console.log(`   PATCH  /api/alerts/dismiss-all/:month - Dismiss all alerts for month`);
+    console.log('🤖 AI Analytics API endpoints:');
+    console.log('   GET    /api/analytics/predictions - Get spending predictions');
+    console.log('   GET    /api/analytics/anomalies - Detect spending anomalies');
+    console.log('   GET    /api/analytics/recommendations - Get budget recommendations');
+    console.log('   GET    /api/analytics/insights - Get comprehensive AI insights');
   });
 };
 
