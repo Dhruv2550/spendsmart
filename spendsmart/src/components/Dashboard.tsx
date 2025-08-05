@@ -592,7 +592,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-sm truncate">{transaction.note}</p>
                         <p className="text-xs text-muted-foreground">
-                          {transaction.category} • {new Date(transaction.date).toLocaleDateString()}
+                          {transaction.category} - {new Date(transaction.date).toLocaleDateString()}
                         </p>
                       </div>
                       
@@ -1048,7 +1048,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
                 <div>
                   <h3 className="font-medium text-blue-800">Dashboard Customization Mode</h3>
                   <p className="text-sm text-blue-700">
-                    • Drag widgets to reorder • Use eye icon to show/hide • Change size with dropdown • Save when done
+                    - Drag widgets to reorder - Use eye icon to show/hide - Change size with dropdown - Save when done
                   </p>
                 </div>
               </div>

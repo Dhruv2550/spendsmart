@@ -13,30 +13,24 @@ const AppLayout = () => {
   const [sharedExpenseLimit, setSharedExpenseLimit] = useState(3000);
 
   const renderPage = () => {
-    console.log("Current page:", currentPage); // Debug line
-    
     switch (currentPage) {
       case "dashboard":
         return <Dashboard monthlySavings={sharedBudget} expenseLimit={sharedExpenseLimit} />;
       case "goals":
-        console.log("Rendering goals"); // Debug line
         return <GoalsPage />;
       case "analytics":
-        console.log("Rendering analytics"); // Debug line
         return <AnalyticsPage monthlySavings={sharedBudget} />;
       case "recurring":
-        console.log("Rendering recurring"); // Debug line
         return <RecurringTransactionsPage />;
       case "budgeting":
-        console.log("Rendering budgeting"); // Debug line
         return <EnvelopeBudgetingPage />;
       case "settings":
-        console.log("Rendering settings"); // Debug line
         return <SettingsPage 
                   monthlySavings={sharedBudget} 
                   onBudgetChange={setSharedBudget}
                   expenseLimit={sharedExpenseLimit}
-                  onExpenseLimitChange={setSharedExpenseLimit}/>;
+                  onExpenseLimitChange={setSharedExpenseLimit}
+                />;
       default:
         return <Dashboard monthlySavings={sharedBudget} expenseLimit={sharedExpenseLimit} />;
     }

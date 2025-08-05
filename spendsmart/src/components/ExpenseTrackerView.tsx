@@ -281,7 +281,7 @@ export const ExpenseTrackerView: React.FC<ExpenseTrackerViewProps> = ({
             <div className="text-right">
               <div className="text-lg font-bold text-red-600">Total: {formatCurrency(visibleTotal)}</div>
               <div className="text-sm text-gray-600">
-                Limit: {formatCurrency(expenseLimit)} • Remaining: {formatCurrency(expenseLimit - visibleTotal)}
+                Limit: {formatCurrency(expenseLimit)} - Remaining: {formatCurrency(expenseLimit - visibleTotal)}
               </div>
               {hiddenColumns.size > 0 && (
                 <div className="text-xs text-gray-500 mt-1">
@@ -319,7 +319,7 @@ export const ExpenseTrackerView: React.FC<ExpenseTrackerViewProps> = ({
             {visibleCategories.reduce((sum, [, transactions]) => sum + transactions.length, 0)} visible transactions this month
             {hiddenColumns.size > 0 && (
               <span className="ml-2 text-gray-400">
-                • {hiddenColumns.size} column{hiddenColumns.size > 1 ? 's' : ''} hidden
+                - {hiddenColumns.size} column{hiddenColumns.size > 1 ? 's' : ''} hidden
               </span>
             )}
           </div>

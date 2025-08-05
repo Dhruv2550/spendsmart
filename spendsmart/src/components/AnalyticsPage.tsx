@@ -629,7 +629,7 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
 
         {selectedMonth !== currentMonth && (
           <div className="mb-6 text-sm text-muted-foreground bg-blue-50 border border-blue-200 rounded-lg p-3">
-            📅 Viewing historical data for {new Date(selectedMonth + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+            Viewing historical data for {new Date(selectedMonth + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
           </div>
         )}
 
@@ -802,7 +802,7 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
                       <div className="flex justify-between text-sm">
                         <span>Days to spend budget:</span>
                         <span className="font-medium">
-                          {spendingVelocity.daysToSpendBudget === Infinity ? '∞' : Math.round(spendingVelocity.daysToSpendBudget)}
+                          {spendingVelocity.daysToSpendBudget === Infinity ? 'Unlimited' : Math.round(spendingVelocity.daysToSpendBudget)}
                         </span>
                       </div>
                     )}
@@ -879,9 +879,9 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
                 <div className="mt-6 pt-4 border-t">
                   <h4 className="font-medium mb-2">Pattern Insights</h4>
                   <div className="text-sm text-muted-foreground space-y-1">
-                    <p>• Weekend spending: ${spendingPatterns.filter(p => p.dayOfWeek === 'Saturday' || p.dayOfWeek === 'Sunday').reduce((sum, p) => sum + p.averageSpending, 0).toFixed(0)} average</p>
-                    <p>• Weekday spending: ${spendingPatterns.filter(p => p.dayOfWeek !== 'Saturday' && p.dayOfWeek !== 'Sunday').reduce((sum, p) => sum + p.averageSpending, 0).toFixed(0)} average</p>
-                    <p>• Most active day: {spendingPatterns.reduce((max, p) => p.transactionCount > max.transactionCount ? p : max, spendingPatterns[0])?.dayOfWeek || 'N/A'}</p>
+                    <p>- Weekend spending: ${spendingPatterns.filter(p => p.dayOfWeek === 'Saturday' || p.dayOfWeek === 'Sunday').reduce((sum, p) => sum + p.averageSpending, 0).toFixed(0)} average</p>
+                    <p>- Weekday spending: ${spendingPatterns.filter(p => p.dayOfWeek !== 'Saturday' && p.dayOfWeek !== 'Sunday').reduce((sum, p) => sum + p.averageSpending, 0).toFixed(0)} average</p>
+                    <p>- Most active day: {spendingPatterns.reduce((max, p) => p.transactionCount > max.transactionCount ? p : max, spendingPatterns[0])?.dayOfWeek || 'N/A'}</p>
                   </div>
                 </div>
               </CardContent>

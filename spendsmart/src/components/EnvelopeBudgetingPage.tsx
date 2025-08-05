@@ -545,7 +545,7 @@ const EnvelopeBudgetingPage: React.FC = () => {
                     <div>
                       <h4 className="font-medium">{template.template_name}</h4>
                       <p className="text-sm text-muted-foreground">
-                        {template.category_count} categories • {formatCurrency(template.total_budget)} total budget
+                        {template.category_count} categories - {formatCurrency(template.total_budget)} total budget
                       </p>
                       <p className="text-xs text-muted-foreground">
                         Last updated: {new Date(template.last_updated).toLocaleDateString()}
