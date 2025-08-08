@@ -1,3 +1,4 @@
+import { API_BASE_URL } from '../config/api';
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
@@ -77,7 +78,7 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
   useEffect(() => {
     const loadTransactions = async () => {
       try {
-        const response = await fetch('http://localhost:3001/api/records');
+        const response = await fetch(`${API_BASE_URL}/api/records`);
         if (!response.ok) throw new Error('Failed to load transactions');
         const data = await response.json();
         setTransactions(data);

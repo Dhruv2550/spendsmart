@@ -1,3 +1,4 @@
+import { API_BASE_URL } from '../config/api';
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -34,7 +35,7 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
   // Load alerts
   const loadAlerts = async () => {
     try {
-      const response = await fetch(`http://localhost:3001/api/alerts/${month}`);
+      const response = await fetch(`${API_BASE_URL}/api/alerts/${month}`);
       if (response.ok) {
         const alertsData = await response.json();
         setAlerts(alertsData);
@@ -53,7 +54,7 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
   // Mark alert as read
   const markAsRead = async (alertId: string) => {
     try {
-      const response = await fetch(`http://localhost:3001/api/alerts/${alertId}/read`, {
+      const response = await fetch(`${API_BASE_URL}/api/alerts/${alertId}/read`, {
         method: 'PATCH'
       });
       
@@ -71,7 +72,7 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
   // Dismiss alert
   const dismissAlert = async (alertId: string) => {
     try {
-      const response = await fetch(`http://localhost:3001/api/alerts/${alertId}/dismiss`, {
+      const response = await fetch(`${API_BASE_URL}/api/alerts/${alertId}/dismiss`, {
         method: 'PATCH'
       });
       
@@ -87,7 +88,7 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
   // Dismiss all alerts
   const dismissAllAlerts = async () => {
     try {
-      const response = await fetch(`http://localhost:3001/api/alerts/dismiss-all/${month}`, {
+      const response = await fetch(`${API_BASE_URL}/api/alerts/dismiss-all/${month}`, {
         method: 'PATCH'
       });
       

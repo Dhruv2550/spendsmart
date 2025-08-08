@@ -1,4 +1,5 @@
 // src/components/EnvelopeBudgetingPage.tsx
+import { API_BASE_URL } from '../config/api';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -101,7 +102,7 @@ const EnvelopeBudgetingPage: React.FC = () => {
     setLoading(true);
     try {
       // Load templates
-      const templatesResponse = await fetch('http://localhost:3001/api/budget-templates');
+      const templatesResponse = await fetch('${API_BASE_URL}/api/budget-templates');
       if (templatesResponse.ok) {
         const templatesData = await templatesResponse.json();
         setTemplates(templatesData);
@@ -122,14 +123,14 @@ const EnvelopeBudgetingPage: React.FC = () => {
       
       // Load budgets for selected template/month
       if (selectedTemplate) {
-        const budgetsResponse = await fetch(`http://localhost:3001/api/budgets/${selectedTemplate}/${selectedMonth}`);
+        const budgetsResponse = await fetch(`${API_BASE_URL}/api/budgets/${selectedTemplate}/${selectedMonth}`);
         if (budgetsResponse.ok) {
           const budgetsData = await budgetsResponse.json();
           setBudgets(budgetsData);
         }
         
         // Load budget analysis
-        const analysisResponse = await fetch(`http://localhost:3001/api/budget-analysis/${selectedTemplate}/${selectedMonth}`);
+        const analysisResponse = await fetch(`${API_BASE_URL}/api/budget-analysis/${selectedTemplate}/${selectedMonth}`);
         if (analysisResponse.ok) {
           const analysisData = await analysisResponse.json();
           setAnalysis(analysisData.analysis);
@@ -217,7 +218,7 @@ const EnvelopeBudgetingPage: React.FC = () => {
       setSaving(true);
 
       try {
-        const response = await fetch('http://localhost:3001/api/budget-templates', {
+        const response = await fetch('${API_BASE_URL}/api/budget-templates', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -578,7 +579,7 @@ const EnvelopeBudgetingPage: React.FC = () => {
                           const targetMonth = prompt('Copy to which month? (YYYY-MM format)', selectedMonth);
                           if (targetMonth) {
                             try {
-                              const response = await fetch(`http://localhost:3001/api/budget-templates/${template.template_name}/copy`, {
+                              const response = await fetch(`${API_BASE_URL}/api/budget-templates/${template.template_name}/copy`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
@@ -607,7 +608,7 @@ const EnvelopeBudgetingPage: React.FC = () => {
                         onClick={async () => {
                           if (window.confirm(`Delete template "${template.template_name}"?`)) {
                             try {
-                              const response = await fetch(`http://localhost:3001/api/budget-templates/${template.template_name}`, {
+                              const response = await fetch(`${API_BASE_URL}api/budget-templates/${template.template_name}`, {
                                 method: 'DELETE'
                               });
                               

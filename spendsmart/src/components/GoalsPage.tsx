@@ -1,3 +1,4 @@
+import { API_BASE_URL } from '../config/api';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -74,7 +75,7 @@ const GoalsPage: React.FC = () => {
   useEffect(() => {
     const fetchCurrentSavings = async () => {
       try {
-        const response = await fetch('http://localhost:3001/api/records');
+        const response = await fetch(`${API_BASE_URL}/api/records`);
         if (response.ok) {
           const transactions = await response.json();
           const totalIncome = transactions

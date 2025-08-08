@@ -1,4 +1,5 @@
 // src/components/RecurringTransactionsPage.tsx
+import { API_BASE_URL } from '../config/api';
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -64,7 +65,7 @@ const RecurringTransactionsPage: React.FC = () => {
   // Load recurring transactions
   const loadRecurringTransactions = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/recurring');
+      const response = await fetch('${API_BASE_URL}');
       if (!response.ok) throw new Error('Failed to load recurring transactions');
       const data = await response.json();
       setRecurringTransactions(data);
@@ -83,7 +84,7 @@ const RecurringTransactionsPage: React.FC = () => {
   const processRecurringTransactions = async () => {
     setProcessing(true);
     try {
-      const response = await fetch('http://localhost:3001/api/recurring/process', {
+      const response = await fetch('${API_BASE_URL}/api/recurring/process', {
         method: 'POST'
       });
       
@@ -113,7 +114,7 @@ const RecurringTransactionsPage: React.FC = () => {
   const markAsPaid = async (transaction: RecurringTransaction) => {
     try {
       // Create the transaction
-      const response = await fetch('http://localhost:3001/api/records', {
+      const response = await fetch(`${API_BASE_URL}/api/records`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -131,7 +132,7 @@ const RecurringTransactionsPage: React.FC = () => {
       const today = new Date().toISOString().split('T')[0];
       const nextDueDate = calculateNextDueDate(today, transaction.frequency);
       
-      const updateResponse = await fetch(`http://localhost:3001/api/recurring/${transaction.id}`, {
+      const updateResponse = await fetch(`${API_BASE_URL}api/recurring/${transaction.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -159,7 +160,7 @@ const RecurringTransactionsPage: React.FC = () => {
     try {
       const nextDueDate = calculateNextDueDate(transaction.next_due_date, transaction.frequency);
       
-      const response = await fetch(`http://localhost:3001/api/recurring/${transaction.id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/recurring/${transaction.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -203,7 +204,7 @@ const RecurringTransactionsPage: React.FC = () => {
   // Toggle active status
   const toggleActive = async (id: string) => {
     try {
-      const response = await fetch(`http://localhost:3001/api/recurring/${id}/toggle`, {
+      const response = await fetch(`${API_BASE_URL}/api/recurring/${id}/toggle`, {
         method: 'PATCH'
       });
       
@@ -222,7 +223,7 @@ const RecurringTransactionsPage: React.FC = () => {
     }
 
     try {
-      const response = await fetch(`http://localhost:3001/api/recurring/${id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/recurring/${id}`, {
         method: 'DELETE'
       });
       
@@ -1012,7 +1013,7 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
 
       if (transaction) {
         // Update existing
-        response = await fetch(`http://localhost:3001/api/recurring/${transaction.id}`, {
+        response = await fetch(`${API_BASE_URL}/api/recurring/${transaction.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1022,7 +1023,7 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
         });
       } else {
         // Create new
-        response = await fetch('http://localhost:3001/api/recurring', {
+        response = await fetch('${API_BASE_URL}/api/recurring', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(recurringData)

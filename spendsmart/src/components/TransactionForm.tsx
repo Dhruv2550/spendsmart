@@ -1,3 +1,4 @@
+import { API_BASE_URL } from '../config/api';
 import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Button } from "./ui/button";
@@ -113,7 +114,7 @@ export const TransactionForm = ({ onClose, onTransactionAdded, editingTransactio
 
       if (editingTransaction) {
         // Update existing transaction
-        response = await fetch(`http://localhost:3001/api/records/${editingTransaction.id}`, {
+        response = await fetch(`${API_BASE_URL}/api/records/${editingTransaction.id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -122,7 +123,7 @@ export const TransactionForm = ({ onClose, onTransactionAdded, editingTransactio
         });
       } else {
         // Create new transaction
-        response = await fetch('http://localhost:3001/api/records', {
+        response = await fetch(`${API_BASE_URL}/api/records`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

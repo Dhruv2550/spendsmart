@@ -1,4 +1,5 @@
 // src/components/ExportImportModal.tsx
+import { API_BASE_URL } from '../config/api';
 import React, { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Button } from './ui/button';
@@ -214,7 +215,7 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
       let successCount = 0;
       for (const transaction of validTransactions) {
         try {
-          const response = await fetch('http://localhost:3001/api/records', {
+          const response = await fetch(`${API_BASE_URL}/api/records`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(transaction)

@@ -1,3 +1,4 @@
+import { API_BASE_URL } from '../config/api';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -199,7 +200,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
     queryKey: ['transactions'],
     queryFn: async (): Promise<Transaction[]> => {
       try {
-        const response = await fetch('http://localhost:3001/api/records');
+        const response = await fetch(`${API_BASE_URL}/api/records`);
         if (!response.ok) throw new Error('Failed to fetch transactions');
         return response.json();
       } catch (error) {
@@ -284,7 +285,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
 
   const handleDeleteTransaction = async (id: number) => {
     try {
-      const response = await fetch(`http://localhost:3001/api/records/${id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/records/${id}`, {
         method: 'DELETE',
       });
       if (response.ok) {
