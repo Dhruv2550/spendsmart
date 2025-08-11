@@ -1,6 +1,6 @@
 import { API_BASE_URL } from '../config/api';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { useState, useEffect, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { TransactionForm } from './TransactionForm';
@@ -69,6 +69,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
   const [showTransactionForm, setShowTransactionForm] = useState(false);
   const [showAllTransactions, setShowAllTransactions] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const queryClient = useQueryClient();
   const [selectedPanel, setSelectedPanel] = useState<'income' | 'expenses' | 'budget' | 'savings' | null>(null);
   const [returnToAllTransactions, setReturnToAllTransactions] = useState(false);
   const [showExpenseTracker, setShowExpenseTracker] = useState(false);
@@ -284,17 +285,41 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
   };
 
   const handleDeleteTransaction = async (id: number) => {
+    // Store the transaction being deleted for potential restoration
+    const transactionToDelete = transactions.find(t => t.id === id);
+    
+    if (!transactionToDelete) {
+      console.error('Transaction not found for deletion');
+      return;
+    }
+
+    // OPTIMISTIC UPDATE: Immediately remove from UI
+    const optimisticTransactions = transactions.filter(t => t.id !== id);
+    
+    // Update the React Query cache immediately for instant UI response
+    queryClient.setQueryData(['transactions'], optimisticTransactions);
+
     try {
+      // Make API call in background
       const response = await fetch(`${API_BASE_URL}/api/records/${id}`, {
         method: 'DELETE',
       });
-      if (response.ok) {
-        refetch();
-      } else {
-        console.error('Error deleting transaction: Server responded with status', response.status);
+      
+      if (!response.ok) {
+        throw new Error(`Delete failed with status: ${response.status}`);
       }
+      
+      // Success - the optimistic update was correct, no need to do anything
+      console.log('Transaction deleted successfully');
+      
     } catch (error) {
       console.error('Error deleting transaction:', error);
+      
+      // ROLLBACK: Restore the transaction if deletion failed
+      queryClient.setQueryData(['transactions'], transactions);
+      
+      // Show user-friendly error message
+      alert('Failed to delete transaction. Please try again.');
     }
   };
 

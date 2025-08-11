@@ -50,8 +50,8 @@ export const TransactionForm = ({ onClose, onTransactionAdded, editingTransactio
   const [newAlerts, setNewAlerts] = useState<SpendingAlert[]>([]);
 
   const categories = {
-    expense: ["Rent", "Groceries", "Shopping", "Dining", "Transportation", "Entertainment", "Utilities", "Healthcare",  "Other"],
-    income: ["Salary", "Freelance", "Investment", "Bonus", "Gift", "Other"]
+    Expense: ["Rent", "Groceries", "Shopping", "Dining", "Transportation", "Entertainment", "Utilities", "Healthcare",  "Other"],
+    Income: ["Salary", "Freelance", "Investment", "Bonus", "Gift", "Other"]
   };
 
   // Populate form when editing
@@ -94,14 +94,12 @@ export const TransactionForm = ({ onClose, onTransactionAdded, editingTransactio
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
-    setNewAlerts([]);
+    const handleSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setError("");
+      setNewAlerts([]);
 
-    try {
-      // Prepare data for backend
+      // Prepare transaction data
       const transactionData = {
         type: formData.type,
         category: formData.category,
@@ -110,58 +108,104 @@ export const TransactionForm = ({ onClose, onTransactionAdded, editingTransactio
         date: formData.date
       };
 
-      let response;
-
       if (editingTransaction) {
-        // Update existing transaction
-        response = await fetch(`${API_BASE_URL}/api/records/${editingTransaction.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(transactionData)
-        });
-      } else {
-        // Create new transaction
-        response = await fetch(`${API_BASE_URL}/api/records`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(transactionData)
-        });
-      }
+        // EDITING: Keep existing behavior for updates
+        setLoading(true);
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/records/${editingTransaction.id}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(transactionData)
+          });
 
-      if (!response.ok) {
-        throw new Error(editingTransaction ? 'Failed to update transaction' : 'Failed to save transaction');
-      }
+          if (!response.ok) {
+            throw new Error('Failed to update transaction');
+          }
 
-      const result = await response.json();
-      console.log(`Transaction ${editingTransaction ? 'updated' : 'saved'} successfully:`, result);
-      
-      // Show browser notifications for alerts (non-blocking)
-      if (!editingTransaction && result.alerts && result.alerts.length > 0) {
-        result.alerts.forEach((alert: SpendingAlert) => {
-          showBrowserNotification(alert);
-        });
+          const result = await response.json();
+          console.log('Transaction updated successfully:', result);
+          
+          onTransactionAdded(); // This triggers refetch and closes form
+          
+        } catch (error) {
+          console.error('Error updating transaction:', error);
+          setError('Failed to update transaction. Please try again.');
+        } finally {
+          setLoading(false);
+        }
+    } else {
+        // NEW TRANSACTION: IMPROVED OPTIMISTIC APPROACH
         
-        // Show brief success message with alert count
-        setNewAlerts(result.alerts);
-        setTimeout(() => {
-          setNewAlerts([]);
-        }, 3000); // Clear alerts after 3 seconds
+        // INSTANT UI UPDATE: Close form right away
+        onTransactionAdded(); // This closes the form immediately and triggers a refetch
+        
+        // BACKGROUND API CALL with retry logic
+        const saveWithRetry = async (attempts = 0) => {
+          try {
+            const response = await fetch(`${API_BASE_URL}/api/records`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(transactionData)
+            });
+
+            if (!response.ok) {
+              throw new Error(`Failed to save transaction: ${response.status}`);
+            }
+
+            const result = await response.json();
+            console.log('Transaction saved successfully:', result);
+            
+            // Force another refetch after successful save to ensure data is current
+            setTimeout(() => {
+              onTransactionAdded();
+            }, 500);
+            
+            // Handle alerts silently in background
+            if (result.alerts && result.alerts.length > 0) {
+              result.alerts.forEach((alert: any) => {
+                if ('Notification' in window && Notification.permission === 'granted') {
+                  const notification = new Notification('SpendSmart Budget Alert', {
+                    body: alert.message,
+                    icon: '/favicon.ico',
+                    tag: alert.id
+                  });
+                  setTimeout(() => notification.close(), 5000);
+                }
+              });
+            }
+            
+          } catch (error) {
+            console.error('Error saving transaction (attempt ' + (attempts + 1) + '):', error);
+            
+            // Retry up to 2 times
+            if (attempts < 2) {
+              console.log('Retrying transaction save...');
+              setTimeout(() => saveWithRetry(attempts + 1), 1000);
+            } else {
+              // Final failure - show error and force refetch
+              if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification('SpendSmart Error', {
+                  body: 'Failed to save transaction after multiple attempts. Please check your connection.',
+                  icon: '/favicon.ico'
+                });
+              }
+              
+              // Force refetch to get current state from server
+              setTimeout(() => {
+                onTransactionAdded();
+              }, 500);
+            }
+          }
+        };
+        
+        // Start the save process
+        saveWithRetry();
       }
-      
-      // Always close form and refresh data immediately
-      onTransactionAdded();
-      
-    } catch (error) {
-      console.error(`Error ${editingTransaction ? 'updating' : 'saving'} transaction:`, error);
-      setError(`Failed to ${editingTransaction ? 'update' : 'save'} transaction. Please try again.`);
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -228,13 +272,13 @@ export const TransactionForm = ({ onClose, onTransactionAdded, editingTransactio
                 <SelectValue placeholder="Select type" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="income">
+                <SelectItem value="Income">
                   <span className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-income"></div>
                     Income
                   </span>
                 </SelectItem>
-                <SelectItem value="expense">
+                <SelectItem value="Expense">
                   <span className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-expense"></div>
                     Expense
