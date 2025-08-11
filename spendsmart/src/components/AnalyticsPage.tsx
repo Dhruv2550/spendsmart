@@ -1,10 +1,11 @@
 import { API_BASE_URL } from '../config/api';
+import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { TrendingUp, BarChart3, Brain, Calendar, Clock, AlertTriangle, CheckCircle, TrendingDown, Activity, FileText, Download, Printer, Bot } from "lucide-react";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import AIInsightsComponent from "./AIInsightsComponent";
 
 interface AnalyticsPageProps {
@@ -52,12 +53,9 @@ interface CategoryTrendData {
 }
 
 const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
   const [showReportModal, setShowReportModal] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
   
-  // Add selected month state - defaults to current month
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -69,29 +67,37 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
   }, []);
 
   const previousMonth = useMemo(() => {
-    // Calculate previous month based on selected month
     const [year, month] = selectedMonth.split('-').map(Number);
-    const prevDate = new Date(year, month - 2, 1); // month - 2 because month is 1-indexed
+    const prevDate = new Date(year, month - 2, 1);
     return `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
   }, [selectedMonth]);
 
-  useEffect(() => {
-    const loadTransactions = async () => {
+  const { data: transactions = [], isLoading } = useQuery({
+    queryKey: ['transactions'],
+    queryFn: async (): Promise<Transaction[]> => {
       try {
         const response = await fetch(`${API_BASE_URL}/api/records`);
-        if (!response.ok) throw new Error('Failed to load transactions');
-        const data = await response.json();
-        setTransactions(data);
+        if (!response.ok) throw new Error('Failed to fetch transactions');
+        const rawData = await response.json();
+        
+        const mappedData = rawData.map((transaction: any) => ({
+          id: parseInt(transaction.id),
+          type: transaction.type.toLowerCase(),
+          category: transaction.category,
+          amount: Number(transaction.amount),
+          note: transaction.note || transaction.category,
+          date: transaction.date,
+          timestamp: transaction.id
+        }));
+        
+        return mappedData;
       } catch (error) {
-        console.error('Error loading transactions:', error);
-      } finally {
-        setLoading(false);
+        console.error('Error fetching transactions:', error);
+        return [];
       }
-    };
-    loadTransactions();
-  }, []);
+    },
+  });
 
-  // Get selected month transactions
   const getSelectedMonthTransactions = () => {
     return transactions.filter(t => {
       const transactionMonth = t.date.substring(0, 7);
@@ -99,7 +105,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
     });
   };
 
-  // Get available months from transactions
   const getAvailableMonths = () => {
     const months = new Set<string>();
     transactions.forEach(t => {
@@ -108,17 +113,14 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
     return Array.from(months).sort().reverse();
   };
 
-  // Generate monthly trend data for line graphs
   const getMonthlyTrendData = (): MonthlyTrendData[] => {
     const monthlyData: { [month: string]: MonthlyTrendData } = {};
     
-    // Get all unique months from transactions
     const allMonths = new Set<string>();
     transactions.forEach(t => {
       allMonths.add(t.date.substring(0, 7));
     });
     
-    // Sort months chronologically
     const sortedMonths = Array.from(allMonths).sort();
     
     sortedMonths.forEach(month => {
@@ -138,11 +140,9 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
     return sortedMonths.map(month => monthlyData[month]);
   };
 
-  // Generate category trend data for category line graphs
   const getCategoryTrendData = (): CategoryTrendData[] => {
     const monthlyData: { [month: string]: CategoryTrendData } = {};
     
-    // Get all unique months and categories
     const allMonths = new Set<string>();
     const allCategories = new Set<string>();
     
@@ -156,20 +156,17 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
     const sortedMonths = Array.from(allMonths).sort();
     const sortedCategories = Array.from(allCategories).sort();
     
-    // Initialize monthly data
     sortedMonths.forEach(month => {
       monthlyData[month] = {
         month,
         monthLabel: new Date(month + '-01').toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
       };
       
-      // Initialize all categories to 0
       sortedCategories.forEach(category => {
         monthlyData[month][category] = 0;
       });
     });
     
-    // Populate with actual spending data
     transactions.filter(t => t.type === 'expense').forEach(t => {
       const month = t.date.substring(0, 7);
       if (monthlyData[month]) {
@@ -180,7 +177,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
     return sortedMonths.map(month => monthlyData[month]);
   };
 
-  // Get top spending categories for line graph display
   const getTopCategories = (limit: number = 6): string[] => {
     const categoryTotals: { [cat: string]: number } = {};
     
@@ -194,7 +190,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
       .map(([category]) => category);
   };
 
-  // Calculate Financial Health Score for selected month
   const getFinancialHealthScore = () => {
     const selectedMonthTransactions = transactions.filter(t => t.date.startsWith(selectedMonth));
     const income = selectedMonthTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
@@ -203,36 +198,30 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
     
     let score = 0;
     
-    // Savings rate (40 points max)
     const savingsRate = income > 0 ? (savings / income) * 100 : 0;
     if (savingsRate >= 20) score += 40;
     else if (savingsRate >= 10) score += 30;
     else if (savingsRate >= 5) score += 20;
     else if (savingsRate >= 0) score += 10;
     
-    // Budget adherence (30 points max)
     const expenseCategories = [...new Set(selectedMonthTransactions.filter(t => t.type === 'expense').map(t => t.category))];
-    if (expenseCategories.length >= 3) score += 20; // Diversified spending
-    if (savings >= monthlySavings * 0.8) score += 10; // Meeting savings goal
+    if (expenseCategories.length >= 3) score += 20;
+    if (savings >= monthlySavings * 0.8) score += 10;
     
-    // Transaction consistency (20 points max)
     const transactionDays = [...new Set(selectedMonthTransactions.map(t => t.date))];
     if (transactionDays.length >= 15) score += 20;
     else if (transactionDays.length >= 10) score += 15;
     else if (transactionDays.length >= 5) score += 10;
     
-    // Financial stability (10 points max)
     if (income > 0 && expenses > 0) score += 10;
     
     return Math.min(score, 100);
   };
 
-  // Analyze spending patterns by day of week for selected month
   const getSpendingPatterns = (): SpendingPattern[] => {
     const patterns: { [key: string]: { total: number; count: number; categories: { [cat: string]: number } } } = {};
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     
-    // Initialize patterns
     dayNames.forEach(day => {
       patterns[day] = { total: 0, count: 0, categories: {} };
     });
@@ -255,7 +244,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
     }));
   };
 
-  // Analyze category trends based on selected month
   const getCategoryTrends = (): CategoryTrend[] => {
     const selectedMonthExpenses: { [cat: string]: number } = {};
     const previousMonthExpenses: { [cat: string]: number } = {};
@@ -298,14 +286,13 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
     }).sort((a, b) => b.currentMonth - a.currentMonth);
   };
 
-  // Calculate spending velocity for selected month
   const getSpendingVelocity = () => {
     const selectedMonthTransactions = transactions.filter(t => t.date.startsWith(selectedMonth) && t.type === 'expense');
     const totalExpenses = selectedMonthTransactions.reduce((sum, t) => sum + t.amount, 0);
     
     const isCurrentMonth = selectedMonth === currentMonth;
     const [year, month] = selectedMonth.split('-').map(Number);
-    const selectedDate = new Date(year, month - 1); // month - 1 because month is 1-indexed
+    const selectedDate = new Date(year, month - 1);
     const currentDay = isCurrentMonth ? new Date().getDate() : new Date(year, month, 0).getDate();
     const daysInMonth = new Date(year, month, 0).getDate();
     
@@ -323,7 +310,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
     };
   };
 
-  // Get spending heatmap data for selected month
   const getSpendingHeatmap = () => {
     const heatmapData: { [date: string]: number } = {};
     
@@ -337,7 +323,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
     return heatmapData;
   };
 
-  // Calculate selected month statistics
   const getSelectedMonthStats = () => {
     const selectedMonthTransactions = getSelectedMonthTransactions();
     
@@ -376,7 +361,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
     };
   };
 
-  // Generate Monthly Report HTML for PDF export
   const generateReportHTML = () => {
     const selectedMonthTransactions = getSelectedMonthTransactions();
     const stats = getSelectedMonthStats();
@@ -385,7 +369,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
     const categoryTrends = getCategoryTrends();
     const spendingVelocity = getSpendingVelocity();
     
-    // Category breakdown
     const categoryBreakdown = selectedMonthTransactions
       .filter(t => t.type === 'expense')
       .reduce((acc, t) => {
@@ -475,7 +458,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
     `;
   };
 
-  // Export report as PDF
   const exportReportAsPDF = () => {
     setGeneratingReport(true);
     
@@ -485,13 +467,11 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
       month: 'long' 
     }).replace(' ', '-');
     
-    // Create a new window with the report content
     const printWindow = window.open('', '_blank');
     if (printWindow) {
       printWindow.document.write(reportHTML);
       printWindow.document.close();
       
-      // Wait for content to load, then print
       printWindow.onload = () => {
         setTimeout(() => {
           printWindow.print();
@@ -505,7 +485,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
     }
   };
 
-  // Export raw data as CSV
   const exportDataAsCSV = () => {
     const selectedMonthTransactions = getSelectedMonthTransactions();
     
@@ -543,12 +522,10 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
   const spendingHeatmap = getSpendingHeatmap();
   const selectedMonthStats = getSelectedMonthStats();
 
-  // New line graph data
   const monthlyTrendData = getMonthlyTrendData();
   const categoryTrendData = getCategoryTrendData();
   const topCategories = getTopCategories();
 
-  // Color palette for category lines
   const categoryColors = [
     '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', 
     '#06b6d4', '#84cc16', '#f97316', '#ec4899', '#6366f1'
@@ -568,7 +545,7 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
     return 'Needs Improvement';
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
         <div className="container mx-auto px-4 py-8">
@@ -590,7 +567,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
           <p className="text-muted-foreground">Deep insights into your spending behavior and financial patterns</p>
         </div>
 
-        {/* Month Selector and Report Export */}
         <div className="flex justify-between items-center mb-8">
           <div className="flex items-center gap-2">
             <label className="text-sm font-medium">Analyze Month:</label>
@@ -618,7 +594,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
             </select>
           </div>
           
-          {/* Monthly Report Export Button */}
           <Button
             onClick={() => setShowReportModal(true)}
             className="flex items-center gap-2 bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary"
@@ -654,7 +629,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
             </TabsTrigger>
           </TabsList>
 
-          {/* INSIGHTS TAB - Financial Health & Smart Analysis */}
           <TabsContent value="insights" className="space-y-6">
             <div className="mb-4">
               <h2 className="text-xl font-semibold">
@@ -668,7 +642,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
               </p>
             </div>
 
-            {/* Financial Health Score */}
             <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -739,7 +712,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
               </CardContent>
             </Card>
 
-            {/* Smart Insights */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
                 <CardHeader>
@@ -824,7 +796,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
             </div>
           </TabsContent>
 
-          {/* PATTERNS TAB - Behavioral Analysis */}
           <TabsContent value="patterns" className="space-y-6">
             <div className="mb-4">
               <h2 className="text-xl font-semibold">
@@ -838,7 +809,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
               </p>
             </div>
 
-            {/* Spending by Day of Week */}
             <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
               <CardHeader>
                 <CardTitle>Spending Patterns by Day of Week</CardTitle>
@@ -888,7 +858,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
               </CardContent>
             </Card>
 
-            {/* Spending Heatmap */}
             <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
               <CardHeader>
                 <CardTitle>Daily Spending Heatmap</CardTitle>
@@ -944,7 +913,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
             </Card>
           </TabsContent>
 
-          {/* TRENDS TAB - Enhanced with Line Graphs */}
           <TabsContent value="trends" className="space-y-6">
             <div className="mb-4">
               <h2 className="text-xl font-semibold">Financial Trends Over Time</h2>
@@ -953,7 +921,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
               </p>
             </div>
 
-            {/* Overall Financial Trends */}
             <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -965,7 +932,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
                 {monthlyTrendData.length >= 2 ? (
                   <div className="h-80">
                     <svg width="100%" height="100%" viewBox="0 0 800 320" className="border rounded">
-                      {/* Grid */}
                       <defs>
                         <pattern id="grid" width="40" height="32" patternUnits="userSpaceOnUse">
                           <path d="M 40 0 L 0 0 0 32" fill="none" stroke="#e5e7eb" strokeWidth="1" opacity="0.3"/>
@@ -973,7 +939,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
                       </defs>
                       <rect width="100%" height="100%" fill="url(#grid)" />
                       
-                      {/* Calculate scales */}
                       {(() => {
                         const maxValue = Math.max(...monthlyTrendData.flatMap(d => [d.totalIncome, d.totalExpenses, Math.abs(d.netSavings)]));
                         const minValue = Math.min(...monthlyTrendData.map(d => d.netSavings));
@@ -981,19 +946,16 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
                         const yScale = 260 / (maxValue - Math.min(minValue, 0));
                         const yOffset = Math.max(-minValue * yScale, 0);
                         
-                        // Generate path data
                         const incomePath = monthlyTrendData.map((d, i) => `${i === 0 ? 'M' : 'L'} ${40 + i * xStep} ${280 - (d.totalIncome * yScale) + yOffset}`).join(' ');
                         const expensePath = monthlyTrendData.map((d, i) => `${i === 0 ? 'M' : 'L'} ${40 + i * xStep} ${280 - (d.totalExpenses * yScale) + yOffset}`).join(' ');
                         const savingsPath = monthlyTrendData.map((d, i) => `${i === 0 ? 'M' : 'L'} ${40 + i * xStep} ${280 - (d.netSavings * yScale) + yOffset}`).join(' ');
                         
                         return (
                           <>
-                            {/* Lines */}
                             <path d={incomePath} fill="none" stroke="#10b981" strokeWidth="3" />
                             <path d={expensePath} fill="none" stroke="#ef4444" strokeWidth="3" />
                             <path d={savingsPath} fill="none" stroke="#3b82f6" strokeWidth="3" />
                             
-                            {/* Dots */}
                             {monthlyTrendData.map((d, i) => (
                               <g key={i}>
                                 <circle cx={40 + i * xStep} cy={280 - (d.totalIncome * yScale) + yOffset} r="5" fill="#10b981" />
@@ -1002,14 +964,12 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
                               </g>
                             ))}
                             
-                            {/* X-axis labels */}
                             {monthlyTrendData.map((d, i) => (
                               <text key={i} x={40 + i * xStep} y={310} textAnchor="middle" className="text-xs fill-gray-600">
                                 {d.monthLabel}
                               </text>
                             ))}
                             
-                            {/* Y-axis labels */}
                             {[0, maxValue * 0.25, maxValue * 0.5, maxValue * 0.75, maxValue].map((value, i) => (
                               <text key={i} x="30" y={290 - i * 65} textAnchor="end" className="text-xs fill-gray-600">
                                 ${(value / 1000).toFixed(0)}k
@@ -1020,7 +980,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
                       })()}
                     </svg>
                     
-                    {/* Legend */}
                     <div className="flex justify-center gap-6 mt-0.5">
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 bg-green-500 rounded"></div>
@@ -1048,7 +1007,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
               </CardContent>
             </Card>
 
-            {/* Category Spending Trends */}
             <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -1060,10 +1018,8 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
                 {categoryTrendData.length >= 2 && topCategories.length > 0 ? (
                   <div className="h-80">
                     <svg width="100%" height="100%" viewBox="0 0 800 320" className="border rounded">
-                      {/* Grid */}
                       <rect width="100%" height="100%" fill="url(#grid)" />
                       
-                      {/* Calculate scales */}
                       {(() => {
                         const maxValue = Math.max(...topCategories.flatMap(cat => 
                           categoryTrendData.map(d => d[cat] as number || 0)
@@ -1075,7 +1031,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
                         
                         return (
                           <>
-                            {/* Category Lines */}
                             {topCategories.map((category, catIndex) => {
                               const path = categoryTrendData.map((d, i) => {
                                 const value = d[category] as number || 0;
@@ -1090,7 +1045,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
                                     stroke={categoryColors[catIndex % categoryColors.length]} 
                                     strokeWidth="2.5" 
                                   />
-                                  {/* Dots */}
                                   {categoryTrendData.map((d, i) => {
                                     const value = d[category] as number || 0;
                                     return value > 0 ? (
@@ -1107,14 +1061,12 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
                               );
                             })}
                             
-                            {/* X-axis labels */}
                             {categoryTrendData.map((d, i) => (
                               <text key={i} x={40 + i * xStep} y={310} textAnchor="middle" className="text-xs fill-gray-600">
                                 {d.monthLabel}
                               </text>
                             ))}
                             
-                            {/* Y-axis labels */}
                             {[0, maxValue * 0.25, maxValue * 0.5, maxValue * 0.75, maxValue].map((value, i) => (
                               <text key={i} x="30" y={290 - i * 65} textAnchor="end" className="text-xs fill-gray-600">
                                 ${(value / 1000).toFixed(0)}k
@@ -1125,7 +1077,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
                       })()}
                     </svg>
                     
-                    {/* Legend */}
                     <div className="flex flex-wrap justify-center gap-4 mt-0.5">
                       {topCategories.map((category, index) => (
                         <div key={category} className="flex items-center gap-2">
@@ -1150,7 +1101,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
               </CardContent>
             </Card>
 
-            {/* Trend Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
                 <CardHeader>
@@ -1181,7 +1131,7 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-sm">Avg Savings:</span>
+                      <span>Avg Savings:</span>
                       <span className="font-medium text-blue-600">
                         ${monthlyTrendData.length > 0 ? 
                           (monthlyTrendData.reduce((sum, m) => sum + m.netSavings, 0) / monthlyTrendData.length).toFixed(0) : 
@@ -1279,7 +1229,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
             </div>
           </TabsContent>
 
-          {/* AI INSIGHTS TAB - New AI-Powered Analysis */}
           <TabsContent value="ai-insights" className="space-y-6">
             <div className="mb-4">
               <h2 className="text-xl font-semibold">AI-Powered Financial Insights</h2>
@@ -1295,7 +1244,6 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
           </TabsContent>
         </Tabs>
 
-        {/* Monthly Report Export Modal */}
         {showReportModal && (
           <Dialog open={showReportModal} onOpenChange={setShowReportModal}>
             <DialogContent className="max-w-md">
