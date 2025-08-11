@@ -38,15 +38,17 @@ interface RecurringTransaction {
   type: 'income' | 'expense';
   category: string;
   amount: number;
-  note: string;
+  description: string;          // CHANGED: was note
   frequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
   start_date: string;
   end_date: string | null;
-  next_due_date: string;
+  next_execution: string;       // Already changed
   is_active: boolean;
-  last_processed: string | null;
+  last_executed: string | null; // CHANGED: was last_processed
   created_at: string;
-  reminder_days?: number; // New field for bill reminders
+  updated_at: string;           // ADD: your API returns this
+  execution_count: number;      // ADD: your API returns this
+  reminder_days?: number;
 }
 
 const RecurringTransactionsPage: React.FC = () => {
@@ -65,7 +67,7 @@ const RecurringTransactionsPage: React.FC = () => {
   // Load recurring transactions
   const loadRecurringTransactions = async () => {
     try {
-      const response = await fetch('${API_BASE_URL}');
+      const response = await fetch(`${API_BASE_URL}/api/recurring`);
       if (!response.ok) throw new Error('Failed to load recurring transactions');
       const data = await response.json();
       setRecurringTransactions(data);
@@ -84,7 +86,7 @@ const RecurringTransactionsPage: React.FC = () => {
   const processRecurringTransactions = async () => {
     setProcessing(true);
     try {
-      const response = await fetch('${API_BASE_URL}/api/recurring/process', {
+      const response = await fetch(`${API_BASE_URL}/api/recurring/execute-due`, {
         method: 'POST'
       });
       
@@ -97,10 +99,10 @@ const RecurringTransactionsPage: React.FC = () => {
       await loadRecurringTransactions();
       
       // Show success message
-      if (result.processed.length > 0) {
-        alert(`Successfully processed ${result.processed.length} recurring transactions!`);
+      if (result.executed_count > 0) {
+        alert(`Successfully processed ${result.executed_count} recurring transactions!`);
       } else {
-        alert('No recurring transactions were due for processing.');
+        alert(result.message || 'No recurring transactions were due for processing.');
       }
     } catch (error) {
       console.error('Error processing recurring transactions:', error);
@@ -110,46 +112,72 @@ const RecurringTransactionsPage: React.FC = () => {
     }
   };
 
-  // Mark bill as paid (creates transaction and updates next due date)
-  const markAsPaid = async (transaction: RecurringTransaction) => {
-    try {
-      // Create the transaction
-      const response = await fetch(`${API_BASE_URL}/api/records`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: transaction.type,
-          category: transaction.category,
-          amount: transaction.amount,
-          note: `${transaction.note} (Manually paid: ${transaction.name})`,
-          date: new Date().toISOString().split('T')[0]
-        })
-      });
+// Replace the markAsPaid function with this debug version to see what's happening:
 
-      if (!response.ok) throw new Error('Failed to create payment transaction');
+const markAsPaid = async (transaction: RecurringTransaction) => {
+  console.log('Starting markAsPaid for:', transaction.name);
+  console.log('Current next_execution:', transaction.next_execution);
+  
+  try {
+    // Calculate next due date FIRST to see what we expect
+    const nextDueDate = calculateNextDueDate(transaction.next_execution, transaction.frequency);
+    console.log('Calculated next due date:', nextDueDate);
+    
+    // Create the transaction
+    console.log('Creating transaction...');
+    const response = await fetch(`${API_BASE_URL}/api/records`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: transaction.type,
+        category: transaction.category,
+        amount: transaction.amount,
+        note: `${transaction.description} (Manually paid: ${transaction.name})`,
+        date: new Date().toISOString().split('T')[0]
+      })
+    });
 
-      // Update the next due date
-      const today = new Date().toISOString().split('T')[0];
-      const nextDueDate = calculateNextDueDate(today, transaction.frequency);
-      
-      const updateResponse = await fetch(`${API_BASE_URL}api/recurring/${transaction.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...transaction,
-          next_due_date: nextDueDate
-        })
-      });
-
-      if (!updateResponse.ok) throw new Error('Failed to update next due date');
-
-      await loadRecurringTransactions();
-      alert(`Marked "${transaction.name}" as paid and updated next due date!`);
-    } catch (error) {
-      console.error('Error marking as paid:', error);
-      alert('Failed to mark as paid');
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Transaction creation failed:', errorText);
+      throw new Error('Failed to create payment transaction');
     }
-  };
+    
+    const transactionResult = await response.json();
+    console.log('Transaction created successfully:', transactionResult);
+
+    // Update the next_execution date
+    console.log('Updating next_execution to:', nextDueDate);
+    const updateResponse = await fetch(`${API_BASE_URL}/api/recurring/${transaction.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        next_execution: nextDueDate
+      })
+    });
+
+    if (!updateResponse.ok) {
+      const errorData = await updateResponse.text();
+      console.error('Update response error:', errorData);
+      throw new Error('Failed to update next due date');
+    }
+
+    const updateResult = await updateResponse.json();
+    console.log('Update result:', updateResult);
+
+    // Reload the data
+    console.log('Reloading recurring transactions...');
+    await loadRecurringTransactions();
+    console.log('Data reloaded');
+
+    alert(`Marked "${transaction.name}" as paid!\n Next due date: ${new Date(nextDueDate).toLocaleDateString()}`);
+    
+  } catch (error) {
+    console.error('Error in markAsPaid:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    alert('Failed to mark as paid: ' + errorMessage);
+  }
+};
 
   // Skip this occurrence (just update next due date without creating transaction)
   const skipThisMonth = async (transaction: RecurringTransaction) => {
@@ -158,14 +186,14 @@ const RecurringTransactionsPage: React.FC = () => {
     }
 
     try {
-      const nextDueDate = calculateNextDueDate(transaction.next_due_date, transaction.frequency);
+      const nextDueDate = calculateNextDueDate(transaction.next_execution, transaction.frequency);
       
       const response = await fetch(`${API_BASE_URL}/api/recurring/${transaction.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...transaction,
-          next_due_date: nextDueDate
+          next_execution: nextDueDate
         })
       });
 
@@ -205,7 +233,7 @@ const RecurringTransactionsPage: React.FC = () => {
   const toggleActive = async (id: string) => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/recurring/${id}/toggle`, {
-        method: 'PATCH'
+          method: 'PUT'
       });
       
       if (!response.ok) throw new Error('Failed to toggle recurring transaction');
@@ -274,13 +302,13 @@ const RecurringTransactionsPage: React.FC = () => {
   
   // Get upcoming bills (next 30 days)
   const upcomingBills = bills.filter(t => {
-    const daysUntil = getDaysUntilDue(t.next_due_date);
+    const daysUntil = getDaysUntilDue(t.next_execution);
     return daysUntil <= 30 && daysUntil >= -7; // Include overdue bills up to 7 days
-  }).sort((a, b) => getDaysUntilDue(a.next_due_date) - getDaysUntilDue(b.next_due_date));
+  }).sort((a, b) => getDaysUntilDue(a.next_execution) - getDaysUntilDue(b.next_execution));
 
-  const dueTransactions = activeTransactions.filter(t => getDaysUntilDue(t.next_due_date) <= 0);
+  const dueTransactions = activeTransactions.filter(t => getDaysUntilDue(t.next_execution) <= 0);
   const dueSoon = activeTransactions.filter(t => {
-    const days = getDaysUntilDue(t.next_due_date);
+    const days = getDaysUntilDue(t.next_execution);
     return days > 0 && days <= 7;
   });
 
@@ -430,7 +458,7 @@ const RecurringTransactionsPage: React.FC = () => {
             <CardContent>
               <div className="space-y-3">
                 {upcomingBills.map((bill) => {
-                  const daysUntilDue = getDaysUntilDue(bill.next_due_date);
+                  const daysUntilDue = getDaysUntilDue(bill.next_execution);
                   const isDue = daysUntilDue <= 0;
                   const isOverdue = daysUntilDue < 0;
                   const dueSoon = daysUntilDue > 0 && daysUntilDue <= 7;
@@ -473,7 +501,7 @@ const RecurringTransactionsPage: React.FC = () => {
                                `Due in ${daysUntilDue} days`}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              {formatDate(bill.next_due_date)}
+                              {formatDate(bill.next_execution)}
                             </p>
                           </div>
                           
@@ -530,7 +558,7 @@ const RecurringTransactionsPage: React.FC = () => {
               {activeTransactions.length > 0 ? (
                 <div className="grid gap-4">
                   {activeTransactions.map((transaction) => {
-                    const daysUntilDue = getDaysUntilDue(transaction.next_due_date);
+                    const daysUntilDue = getDaysUntilDue(transaction.next_execution);
                     const isDue = daysUntilDue <= 0;
                     const isOverdue = daysUntilDue < 0;
 
@@ -569,7 +597,7 @@ const RecurringTransactionsPage: React.FC = () => {
                                   <p className={`font-medium ${
                                     isDue ? 'text-orange-600' : 'text-gray-700'
                                   }`}>
-                                    {formatDate(transaction.next_due_date)}
+                                    {formatDate(transaction.next_execution)}
                                   </p>
                                 </div>
                                 <div>
@@ -588,8 +616,8 @@ const RecurringTransactionsPage: React.FC = () => {
                                 </div>
                               </div>
                               
-                              {transaction.note && (
-                                <p className="text-sm text-muted-foreground mt-2">{transaction.note}</p>
+                              {transaction.description && (
+                                <p className="text-sm text-muted-foreground mt-2">{transaction.description}</p>
                               )}
                             </div>
 
@@ -694,7 +722,7 @@ const RecurringTransactionsPage: React.FC = () => {
               {bills.length > 0 ? (
                 <div className="grid gap-4">
                   {bills.map((bill) => {
-                    const daysUntilDue = getDaysUntilDue(bill.next_due_date);
+                    const daysUntilDue = getDaysUntilDue(bill.next_execution);
                     const isDue = daysUntilDue <= 0;
                     const isOverdue = daysUntilDue < 0;
                     const CategoryIcon = getCategoryIcon(bill.category);
@@ -727,7 +755,7 @@ const RecurringTransactionsPage: React.FC = () => {
                                     <p className={`font-medium ${
                                       isDue ? 'text-orange-600' : 'text-gray-700'
                                     }`}>
-                                      {formatDate(bill.next_due_date)}
+                                      {formatDate(bill.next_execution)}
                                     </p>
                                   </div>
                                   <div>
@@ -802,7 +830,7 @@ const RecurringTransactionsPage: React.FC = () => {
               {incomeTransactions.length > 0 ? (
                 <div className="grid gap-4">
                   {incomeTransactions.map((income) => {
-                    const daysUntilDue = getDaysUntilDue(income.next_due_date);
+                    const daysUntilDue = getDaysUntilDue(income.next_execution);
 
                     return (
                       <Card key={income.id} className="border-0 shadow-md bg-gradient-to-br from-green-50 to-green-100">
@@ -828,7 +856,7 @@ const RecurringTransactionsPage: React.FC = () => {
                                   <div>
                                     <span className="text-muted-foreground">Next Expected:</span>
                                     <p className="font-medium text-gray-700">
-                                      {formatDate(income.next_due_date)}
+                                      {formatDate(income.next_execution)}
                                     </p>
                                   </div>
                                   <div>
@@ -979,7 +1007,7 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
     type: transaction?.type || '',
     category: transaction?.category || '',
     amount: transaction?.amount?.toString() || '',
-    note: transaction?.note || '',
+    description: transaction?.description || '',
     frequency: transaction?.frequency || '',
     start_date: transaction?.start_date || new Date().toISOString().split('T')[0],
     end_date: transaction?.end_date || '',
@@ -1001,7 +1029,7 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
         type: formData.type,
         category: formData.category,
         amount: parseFloat(formData.amount),
-        note: formData.note,
+        description: formData.description,
         frequency: formData.frequency,
         start_date: formData.start_date,
         end_date: formData.end_date || null,
@@ -1018,17 +1046,20 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             ...recurringData,
-            next_due_date: transaction.next_due_date // Preserve next due date when editing
+            next_execution: transaction.next_execution // Preserve next due date when editing
           })
         });
-      } else {
-        // Create new
-        response = await fetch('${API_BASE_URL}/api/recurring', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(recurringData)
-        });
-      }
+        } else {
+          // Create new
+          response = await fetch(`${API_BASE_URL}/api/recurring`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...recurringData,
+              next_execution: formData.start_date // Set next_execution to start_date for new transactions
+            })
+          });
+        }
 
       if (!response.ok) {
         throw new Error(transaction ? 'Failed to update recurring transaction' : 'Failed to create recurring transaction');
@@ -1182,10 +1213,10 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
           </div>
 
           <div className="space-y-2">
-            <Label>Note (Optional)</Label>
+            <Label>description (Optional)</Label>
             <Textarea
-              value={formData.note}
-              onChange={(e) => handleInputChange('note', e.target.value)}
+              value={formData.description}
+              onChange={(e) => handleInputChange('description', e.target.value)}
               placeholder="Additional details about this recurring transaction..."
               rows={3}
             />

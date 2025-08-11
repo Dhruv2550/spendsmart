@@ -1,4 +1,4 @@
-// src/App.tsx - Updated with Dark Mode Provider
+// src/App.tsx - Revert to your original working version
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DarkModeProvider } from "./contexts/DarkModeContext";
 import AppLayout from "./components/AppLayout";

@@ -35,11 +35,15 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
   // Load alerts
   const loadAlerts = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/alerts/${month}`);
-      if (response.ok) {
-        const alertsData = await response.json();
-        setAlerts(alertsData);
-      }
+      const response = await fetch(`${API_BASE_URL}/api/alerts`);
+    if (response.ok) {
+      const alertsData = await response.json();
+      // Filter alerts for the current month if they have month data
+      const filteredAlerts = alertsData.data ? alertsData.data.filter((alert: SpendingAlert) => 
+        alert.month === month || !alert.month // Show alerts without month data
+      ) : [];
+      setAlerts(filteredAlerts);
+    }
     } catch (error) {
       console.error('Error loading alerts:', error);
     } finally {

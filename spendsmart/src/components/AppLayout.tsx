@@ -1,3 +1,4 @@
+// src/components/AppLayout.tsx - Revert to your original working version
 import { useState } from "react";
 import Navigation from "./Navigation";
 import Dashboard from "./Dashboard";
@@ -9,7 +10,7 @@ import EnvelopeBudgetingPage from "./EnvelopeBudgetingPage";
 
 const AppLayout = () => {
   const [currentPage, setCurrentPage] = useState("dashboard");
-  const [sharedBudget, setSharedBudget] = useState(2000); // Default starting budget
+  const [sharedBudget, setSharedBudget] = useState(2000);
   const [sharedExpenseLimit, setSharedExpenseLimit] = useState(3000);
 
   const renderPage = () => {
