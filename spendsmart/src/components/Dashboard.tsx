@@ -48,7 +48,6 @@ interface DashboardProps {
   expenseLimit: number;
 }
 
-// Widget definition
 interface Widget {
   id: string;
   title: string;
@@ -57,7 +56,6 @@ interface Widget {
   order: number;
 }
 
-// Widget size mapping
 const sizeMap = {
   'small': 'col-span-1 row-span-1',
   'medium': 'col-span-1 row-span-2',
@@ -65,7 +63,6 @@ const sizeMap = {
 };
 
 export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLimit }) => {
-  // Transaction management state
   const [showTransactionForm, setShowTransactionForm] = useState(false);
   const [showAllTransactions, setShowAllTransactions] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
@@ -76,18 +73,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
   const [returnToExpenseTracker, setReturnToExpenseTracker] = useState(false);
   const [showExportImport, setShowExportImport] = useState(false);
   
-  // Month selection state
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
 
-  // Dashboard customization state
   const [isCustomizing, setIsCustomizing] = useState(false);
   const [widgets, setWidgets] = useState<Widget[]>([]);
   const [draggedWidget, setDraggedWidget] = useState<string | null>(null);
 
-  // Default widgets configuration
   const defaultWidgets: Widget[] = [
     { id: 'income', title: 'Total Income', visible: true, size: 'small', order: 1 },
     { id: 'expenses', title: 'Total Expenses', visible: true, size: 'small', order: 2 },
@@ -101,7 +95,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
     { id: 'budget-calendar', title: 'Budget Calendar', visible: false, size: 'medium', order: 10 }
   ];
 
-  // Load dashboard configuration from localStorage
   useEffect(() => {
     try {
       const savedWidgets = localStorage.getItem('spendsmart_dashboard_widgets');
@@ -116,7 +109,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
     }
   }, []);
 
-  // Save dashboard configuration to localStorage
   const saveDashboardLayout = () => {
     try {
       localStorage.setItem('spendsmart_dashboard_widgets', JSON.stringify(widgets));
@@ -126,7 +118,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
     }
   };
 
-  // Reset to default layout
   const resetToDefault = () => {
     if (window.confirm('Reset dashboard to default layout? This will remove your customizations.')) {
       setWidgets(defaultWidgets);
@@ -135,7 +126,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
     }
   };
 
-  // Toggle widget visibility
   const toggleWidgetVisibility = (widgetId: string) => {
     setWidgets(prev => 
       prev.map(widget => 
@@ -146,7 +136,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
     );
   };
 
-  // Change widget size
   const changeWidgetSize = (widgetId: string, newSize: 'small' | 'medium' | 'large') => {
     setWidgets(prev => 
       prev.map(widget => 
@@ -157,7 +146,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
     );
   };
 
-  // Drag and drop handlers
   const handleDragStart = (e: React.DragEvent, widgetId: string) => {
     setDraggedWidget(widgetId);
     e.dataTransfer.effectAllowed = 'move';
@@ -186,7 +174,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
       const [draggedWidgetObj] = newWidgets.splice(draggedIndex, 1);
       newWidgets.splice(targetIndex, 0, draggedWidgetObj);
       
-      // Update order
       return newWidgets.map((widget, index) => ({
         ...widget,
         order: index + 1
@@ -196,14 +183,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
     setDraggedWidget(null);
   };
 
-  // Fetch transactions from your backend
   const { data: transactions = [], refetch, isLoading, error } = useQuery({
     queryKey: ['transactions'],
     queryFn: async (): Promise<Transaction[]> => {
       try {
         const response = await fetch(`${API_BASE_URL}/api/records`);
         if (!response.ok) throw new Error('Failed to fetch transactions');
-        return response.json();
+        const rawData = await response.json();
+        
+        const mappedData = rawData.map((transaction: any) => ({
+          id: parseInt(transaction.id),
+          type: transaction.type.toLowerCase(),
+          category: transaction.category,
+          amount: Number(transaction.amount),
+          note: transaction.note || transaction.category,
+          date: transaction.date,
+          timestamp: transaction.id
+        }));
+        
+        return mappedData;
       } catch (error) {
         console.error('Error fetching transactions:', error);
         return [];
@@ -211,7 +209,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
     },
   });
 
-  // Calculate totals - FILTERED BY MONTH
   const totalIncome = useMemo(() => {
     return transactions
       .filter((transaction: Transaction) => {
@@ -234,13 +231,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
   const budgetPercentage = expenseLimit > 0 ? Math.min((totalExpenses / expenseLimit) * 100, 100) : 0;
   const savingsProgress = monthlySavings > 0 ? Math.min((currentSavings / monthlySavings) * 100, 100) : 0;
 
-  // Daily average spending
   const dailyAverageSpending = useMemo(() => {
     const daysInMonth = new Date(parseInt(selectedMonth.split('-')[0]), parseInt(selectedMonth.split('-')[1]), 0).getDate();
     return totalExpenses / daysInMonth;
   }, [totalExpenses, selectedMonth]);
 
-  // Monthly trend data
   const monthlyTrend = useMemo(() => {
     const currentMonth = selectedMonth;
     const [year, month] = currentMonth.split('-').map(Number);
@@ -285,7 +280,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
   };
 
   const handleDeleteTransaction = async (id: number) => {
-    // Store the transaction being deleted for potential restoration
     const transactionToDelete = transactions.find(t => t.id === id);
     
     if (!transactionToDelete) {
@@ -293,14 +287,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
       return;
     }
 
-    // OPTIMISTIC UPDATE: Immediately remove from UI
     const optimisticTransactions = transactions.filter(t => t.id !== id);
-    
-    // Update the React Query cache immediately for instant UI response
     queryClient.setQueryData(['transactions'], optimisticTransactions);
 
     try {
-      // Make API call in background
       const response = await fetch(`${API_BASE_URL}/api/records/${id}`, {
         method: 'DELETE',
       });
@@ -309,16 +299,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
         throw new Error(`Delete failed with status: ${response.status}`);
       }
       
-      // Success - the optimistic update was correct, no need to do anything
       console.log('Transaction deleted successfully');
       
     } catch (error) {
       console.error('Error deleting transaction:', error);
-      
-      // ROLLBACK: Restore the transaction if deletion failed
       queryClient.setQueryData(['transactions'], transactions);
-      
-      // Show user-friendly error message
       alert('Failed to delete transaction. Please try again.');
     }
   };
@@ -362,7 +347,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
     refetch();
   };
 
-  // Get top expense categories - FILTERED BY MONTH
   const getExpensesByCategory = () => {
     const expenseTransactions = transactions.filter((t: Transaction) => {
       const transactionMonth = t.date.substring(0, 7);
@@ -387,7 +371,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
 
   const topExpenseCategories = getExpensesByCategory();
   
-  // Get recent transactions - FILTERED BY MONTH
   const recentTransactions = useMemo(() => {
     return [...transactions]
       .filter((t: Transaction) => {
@@ -395,20 +378,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
         return transactionMonth === selectedMonth;
       })
       .sort((a: Transaction, b: Transaction) => {
-        const dateA = new Date(a.date).getTime();
-        const dateB = new Date(b.date).getTime();
-        return dateB - dateA;
+        return b.id - a.id;
       })
       .slice(0, 5);
   }, [transactions, selectedMonth]);
 
-  // Get available months from transactions
   const getAvailableMonths = () => {
     const months = new Set<string>();
     transactions.forEach(t => {
       months.add(t.date.substring(0, 7));
     });
-    // Ensure current month is available
     const currentDate = new Date();
     const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
     months.add(currentMonth);
@@ -416,7 +395,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
     return Array.from(months).sort().reverse();
   };
 
-  // Customizable widget component wrapper
   const CustomizableWidget: React.FC<{
     widget: Widget;
     children: React.ReactNode;
@@ -474,7 +452,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
     </div>
   );
 
-  // Clickable panel component
   const ClickableStatCard: React.FC<{
     title: string;
     value: string;
@@ -498,7 +475,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
     </Card>
   );
 
-  // Widget renderer
   const renderWidget = (widget: Widget) => {
     switch (widget.id) {
       case 'income':
@@ -900,9 +876,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
                     const firstDay = new Date(year, month - 1, 1);
                     const lastDay = new Date(year, month, 0);
                     const daysInMonth = lastDay.getDate();
-                    const startOffset = firstDay.getDay(); // 0 = Sunday
+                    const startOffset = firstDay.getDay();
                     
-                    // Group transactions by date
                     const transactionsByDate: Record<string, {income: number, expense: number}> = {};
                     transactions
                       .filter(t => t.date.startsWith(selectedMonth))
@@ -920,14 +895,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
                     
                     const calendarDays = [];
                     
-                    // Add empty cells for days before the 1st
                     for (let i = 0; i < startOffset; i++) {
                       calendarDays.push(
                         <div key={`empty-${i}`} className="p-1 h-14 bg-gray-50 rounded opacity-50"></div>
                       );
                     }
                     
-                    // Add days of the month
                     for (let day = 1; day <= daysInMonth; day++) {
                       const dayStr = String(day).padStart(2, '0');
                       const dayData = transactionsByDate[dayStr];
@@ -972,19 +945,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
     }
   };
 
-  // Get visible widgets sorted by order
   const visibleWidgets = useMemo(() => {
     return widgets
       .filter(widget => widget.visible)
       .sort((a, b) => a.order - b.order);
   }, [widgets]);
 
-  // Get hidden widgets
   const hiddenWidgets = useMemo(() => {
     return widgets.filter(widget => !widget.visible);
   }, [widgets]);
 
-  // Error handling
   if (error) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
@@ -1019,7 +989,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
       <div className="container mx-auto px-4 py-8">
-        {/* Header */}
         <div className="mb-8">
           <div className="flex justify-between items-center">
             <div>
@@ -1031,7 +1000,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
               </p>
             </div>
             
-            {/* Dashboard Customization Controls */}
             <div className="flex gap-2">
               {isCustomizing ? (
                 <>
@@ -1065,7 +1033,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
           </div>
         </div>
 
-        {/* Customization Instructions */}
         {isCustomizing && (
           <Card className="border-blue-200 bg-blue-50 mb-6">
             <CardContent className="p-4">
@@ -1082,7 +1049,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
           </Card>
         )}
 
-        {/* Spending Alerts Notification */}
         {!isCustomizing && (
           <SpendingAlertsNotification 
             month={selectedMonth} 
@@ -1092,10 +1058,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
           />
         )}
 
-        {/* Action Buttons and Month Selector */}
         {!isCustomizing && (
           <div className="flex justify-between items-center mb-8">
-            {/* Month Selector */}
             <div className="flex items-center gap-2">
               <label className="text-sm font-medium">View Month:</label>
               <select 
@@ -1114,7 +1078,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
               </select>
             </div>
 
-            {/* Action Buttons */}
             <div className="flex gap-3">
               <Button 
                 variant="outline" 
@@ -1147,7 +1110,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
           </div>
         ) : (
           <>
-            {/* Customizable Dashboard Grid */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
               {visibleWidgets.map((widget) => (
                 <CustomizableWidget
@@ -1159,7 +1121,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
               ))}
             </div>
 
-            {/* Hidden Widgets Panel (only in customization mode) */}
             {isCustomizing && hiddenWidgets.length > 0 && (
               <Card className="border-gray-200 bg-gray-50 mb-8">
                 <CardHeader>
@@ -1193,7 +1154,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
           </>
         )}
 
-        {/* Modals */}
         {showTransactionForm && (
           <TransactionForm
             onClose={handleFormClose}
