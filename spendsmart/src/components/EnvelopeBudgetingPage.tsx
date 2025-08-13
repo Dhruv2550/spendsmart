@@ -102,7 +102,7 @@ const EnvelopeBudgetingPage: React.FC = () => {
     setLoading(true);
     try {
       // Load templates
-      const templatesResponse = await fetch('${API_BASE_URL}/api/budget-templates');
+      const templatesResponse = await fetch(`${API_BASE_URL}/api/budget-templates`);
       if (templatesResponse.ok) {
         const templatesData = await templatesResponse.json();
         setTemplates(templatesData);
@@ -218,22 +218,50 @@ const EnvelopeBudgetingPage: React.FC = () => {
       setSaving(true);
 
       try {
-        const response = await fetch('${API_BASE_URL}/api/budget-templates', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            template_name: templateData.template_name,
-            month: templateData.month,
-            budgets: templateData.budgets.filter(b => b.budget_amount > 0)
-          })
-        });
+        if (editingTemplateName) {
+          // When editing, update the existing budgets for the current month
+          const budgetsToUpdate = templateData.budgets
+            .filter(b => b.budget_amount > 0)
+            .map(budget => ({
+              category: budget.category,
+              budget_amount: budget.budget_amount
+            }));
 
-        if (!response.ok) {
-          throw new Error(`Failed to ${editingTemplateName ? 'update' : 'create'} budget template`);
+          const response = await fetch(`${API_BASE_URL}/api/budgets/${editingTemplateName}/${selectedMonth}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              budgets: budgetsToUpdate
+            })
+          });
+
+          if (!response.ok) {
+            throw new Error('Failed to update budgets');
+          }
+        } else {
+          // When creating new template, use the template endpoint
+          const response = await fetch(`${API_BASE_URL}/api/budget-templates`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              template_name: templateData.template_name,
+              categories: templateData.budgets
+                .filter(b => b.budget_amount > 0)
+                .map(budget => ({
+                  category: budget.category,
+                  budget_amount: budget.budget_amount,
+                  rollover_enabled: budget.rollover_enabled || false
+                }))
+            })
+          });
+
+          if (!response.ok) {
+            throw new Error('Failed to create budget template');
+          }
+
+          // Set the created template as selected
+          setSelectedTemplate(templateData.template_name);
         }
-
-        // Set the created/updated template as selected
-        setSelectedTemplate(templateData.template_name);
         
         onSave();
         onClose();
@@ -265,7 +293,7 @@ const EnvelopeBudgetingPage: React.FC = () => {
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {editingTemplateName ? `Edit ${editingTemplateName} Template` : 'Create Budget Template'}
+              {editingTemplateName ? `Edit ${editingTemplateName} Budget` : 'Create Budget Template'}
             </DialogTitle>
           </DialogHeader>
 
@@ -288,6 +316,7 @@ const EnvelopeBudgetingPage: React.FC = () => {
                   value={templateData.month}
                   onChange={(e) => setTemplateData(prev => ({ ...prev, month: e.target.value }))}
                   required
+                  disabled={!!editingTemplateName} // Disable when editing existing budgets
                 />
               </div>
             </div>
@@ -322,7 +351,7 @@ const EnvelopeBudgetingPage: React.FC = () => {
 
             <div className="flex gap-3 pt-4">
               <Button type="submit" className="flex-1" disabled={!templateData.template_name || saving}>
-                {saving ? (editingTemplateName ? 'Updating...' : 'Creating...') : (editingTemplateName ? 'Update Template' : 'Create Template')}
+                {saving ? (editingTemplateName ? 'Updating...' : 'Creating...') : (editingTemplateName ? 'Update Budget' : 'Create Template')}
               </Button>
               <Button type="button" variant="outline" onClick={onClose}>
                 Cancel
@@ -568,7 +597,7 @@ const EnvelopeBudgetingPage: React.FC = () => {
                           setEditingTemplate(template.template_name);
                           setShowEditTemplate(true);
                         }}
-                        title="Edit Template"
+                        title="Edit Budget"
                       >
                         <Edit2 className="h-3 w-3" />
                       </Button>
@@ -608,7 +637,7 @@ const EnvelopeBudgetingPage: React.FC = () => {
                         onClick={async () => {
                           if (window.confirm(`Delete template "${template.template_name}"?`)) {
                             try {
-                              const response = await fetch(`${API_BASE_URL}api/budget-templates/${template.template_name}`, {
+                              const response = await fetch(`${API_BASE_URL}/api/budget-templates/${template.template_name}`, {
                                 method: 'DELETE'
                               });
                               
