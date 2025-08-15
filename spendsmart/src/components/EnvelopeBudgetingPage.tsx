@@ -1,6 +1,5 @@
-// src/components/EnvelopeBudgetingPage.tsx
 import { API_BASE_URL } from '../config/api';
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -22,7 +21,10 @@ import {
   Calendar,
   Save,
   Package,
-  BarChart3
+  BarChart3,
+  X,
+  Info,
+  Loader2
 } from 'lucide-react';
 
 interface EnvelopeBudget {
@@ -70,8 +72,9 @@ const EnvelopeBudgetingPage: React.FC = () => {
   const [analysis, setAnalysis] = useState<BudgetAnalysis[]>([]);
   const [summary, setSummary] = useState<BudgetSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [backgroundLoading, setBackgroundLoading] = useState(false);
+  const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(new Set());
   
-  // Load selected template from localStorage, fallback to 'Default'
   const [selectedTemplate, setSelectedTemplate] = useState(() => {
     return localStorage.getItem('spendsmart_selected_budget_template') || 'Default';
   });
@@ -90,29 +93,94 @@ const EnvelopeBudgetingPage: React.FC = () => {
     "Entertainment", "Utilities", "Healthcare", "Other"
   ];
 
-  // Save selected template to localStorage whenever it changes
+  const optimisticTemplateChange = (newTemplate: string) => {
+    setSelectedTemplate(newTemplate);
+    setBackgroundLoading(true);
+    
+    setTimeout(() => setBackgroundLoading(false), 1500);
+  };
+
+  const optimisticMonthChange = (newMonth: string) => {
+    setSelectedMonth(newMonth);
+    setBackgroundLoading(true);
+    
+    setTimeout(() => setBackgroundLoading(false), 1500);
+  };
+
+  const optimisticTemplateCopy = async (templateName: string, sourceMonth: string, targetMonth: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/budget-templates/${templateName}/copy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source_month: sourceMonth,
+          target_month: targetMonth,
+          apply_rollover: true
+        })
+      });
+      
+      if (response.ok) {
+        loadData();
+      } else {
+        throw new Error('Failed to copy template');
+      }
+    } catch (error) {
+      console.error('Error copying template:', error);
+    }
+  };
+
+  const optimisticTemplateDelete = async (templateName: string) => {
+    if (!window.confirm(`Delete template "${templateName}"?`)) return;
+    
+    setPendingDeletes(prev => new Set([...prev, templateName]));
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/budget-templates/${templateName}`, {
+        method: 'DELETE'
+      });
+      
+      if (response.ok) {
+        if (selectedTemplate === templateName) {
+          localStorage.removeItem('spendsmart_selected_budget_template');
+          setSelectedTemplate('Default');
+        }
+        loadData();
+      } else {
+        throw new Error('Failed to delete template');
+      }
+    } catch (error) {
+      console.error('Error deleting template:', error);
+      setPendingDeletes(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(templateName);
+        return newSet;
+      });
+    }
+  };
+
   useEffect(() => {
     if (selectedTemplate) {
       localStorage.setItem('spendsmart_selected_budget_template', selectedTemplate);
     }
   }, [selectedTemplate]);
 
-  // Load data
   const loadData = async () => {
-    setLoading(true);
+    if (budgets.length === 0) {
+      setLoading(true);
+    } else {
+      setBackgroundLoading(true);
+    }
+    
     try {
-      // Load templates
       const templatesResponse = await fetch(`${API_BASE_URL}/api/budget-templates`);
       if (templatesResponse.ok) {
         const templatesData = await templatesResponse.json();
-        setTemplates(templatesData);
+        setTemplates(templatesData.filter((t: BudgetTemplate) => !pendingDeletes.has(t.template_name)));
         
-        // If no template selected but templates exist, select first one
         if (!selectedTemplate && templatesData.length > 0) {
           setSelectedTemplate(templatesData[0].template_name);
         }
         
-        // If selected template doesn't exist anymore, select first available or reset
         if (selectedTemplate && templatesData.length > 0) {
           const templateExists = templatesData.some((t: BudgetTemplate) => t.template_name === selectedTemplate);
           if (!templateExists) {
@@ -121,7 +189,6 @@ const EnvelopeBudgetingPage: React.FC = () => {
         }
       }
       
-      // Load budgets for selected template/month
       if (selectedTemplate) {
         const budgetsResponse = await fetch(`${API_BASE_URL}/api/budgets/${selectedTemplate}/${selectedMonth}`);
         if (budgetsResponse.ok) {
@@ -129,7 +196,6 @@ const EnvelopeBudgetingPage: React.FC = () => {
           setBudgets(budgetsData);
         }
         
-        // Load budget analysis
         const analysisResponse = await fetch(`${API_BASE_URL}/api/budget-analysis/${selectedTemplate}/${selectedMonth}`);
         if (analysisResponse.ok) {
           const analysisData = await analysisResponse.json();
@@ -141,6 +207,7 @@ const EnvelopeBudgetingPage: React.FC = () => {
       console.error('Error loading budget data:', error);
     } finally {
       setLoading(false);
+      setBackgroundLoading(false);
     }
   };
 
@@ -166,7 +233,6 @@ const EnvelopeBudgetingPage: React.FC = () => {
     return 'On Track';
   };
 
-  // Template Creation/Edit Form
   const TemplateForm: React.FC<{
     isOpen: boolean;
     onClose: () => void;
@@ -184,7 +250,6 @@ const EnvelopeBudgetingPage: React.FC = () => {
     });
     const [saving, setSaving] = useState(false);
 
-    // Load existing template data when editing
     useEffect(() => {
       if (editingTemplateName && budgets.length > 0) {
         setTemplateData({
@@ -200,7 +265,6 @@ const EnvelopeBudgetingPage: React.FC = () => {
           })
         });
       } else if (!editingTemplateName) {
-        // Reset for new template
         setTemplateData({
           template_name: '',
           month: selectedMonth,
@@ -219,7 +283,6 @@ const EnvelopeBudgetingPage: React.FC = () => {
 
       try {
         if (editingTemplateName) {
-          // When editing, update the existing budgets for the current month
           const budgetsToUpdate = templateData.budgets
             .filter(b => b.budget_amount > 0)
             .map(budget => ({
@@ -239,7 +302,6 @@ const EnvelopeBudgetingPage: React.FC = () => {
             throw new Error('Failed to update budgets');
           }
         } else {
-          // When creating new template, use the template endpoint
           const response = await fetch(`${API_BASE_URL}/api/budget-templates`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -259,7 +321,6 @@ const EnvelopeBudgetingPage: React.FC = () => {
             throw new Error('Failed to create budget template');
           }
 
-          // Set the created template as selected
           setSelectedTemplate(templateData.template_name);
         }
         
@@ -267,7 +328,6 @@ const EnvelopeBudgetingPage: React.FC = () => {
         onClose();
       } catch (error) {
         console.error('Error saving template:', error);
-        alert(`Failed to ${editingTemplateName ? 'update' : 'create'} budget template`);
       } finally {
         setSaving(false);
       }
@@ -290,7 +350,7 @@ const EnvelopeBudgetingPage: React.FC = () => {
 
     return (
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-4xl w-full mx-4 my-8 max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingTemplateName ? `Edit ${editingTemplateName} Budget` : 'Create Budget Template'}
@@ -306,7 +366,8 @@ const EnvelopeBudgetingPage: React.FC = () => {
                   onChange={(e) => setTemplateData(prev => ({ ...prev, template_name: e.target.value }))}
                   placeholder="Default Budget"
                   required
-                  disabled={!!editingTemplateName} // Disable when editing
+                  disabled={!!editingTemplateName}
+                  className="transition-all duration-200 hover:border-primary/50 focus:border-primary"
                 />
               </div>
               <div className="space-y-2">
@@ -316,7 +377,8 @@ const EnvelopeBudgetingPage: React.FC = () => {
                   value={templateData.month}
                   onChange={(e) => setTemplateData(prev => ({ ...prev, month: e.target.value }))}
                   required
-                  disabled={!!editingTemplateName} // Disable when editing existing budgets
+                  disabled={!!editingTemplateName}
+                  className="transition-all duration-200 hover:border-primary/50 focus:border-primary"
                 />
               </div>
             </div>
@@ -325,7 +387,7 @@ const EnvelopeBudgetingPage: React.FC = () => {
               <div className="flex justify-between items-center">
                 <h3 className="text-lg font-semibold">Category Budgets</h3>
                 <div className="text-sm text-muted-foreground">
-                  Total: {formatCurrency(totalBudget)}
+                  Total: <span className="font-medium">{formatCurrency(totalBudget)}</span>
                 </div>
               </div>
 
@@ -342,6 +404,7 @@ const EnvelopeBudgetingPage: React.FC = () => {
                         value={budget?.budget_amount || ''}
                         onChange={(e) => updateBudgetAmount(category, e.target.value)}
                         placeholder="0.00"
+                        className="transition-all duration-200 hover:border-primary/50 focus:border-primary"
                       />
                     </div>
                   );
@@ -350,10 +413,29 @@ const EnvelopeBudgetingPage: React.FC = () => {
             </div>
 
             <div className="flex gap-3 pt-4">
-              <Button type="submit" className="flex-1" disabled={!templateData.template_name || saving}>
-                {saving ? (editingTemplateName ? 'Updating...' : 'Creating...') : (editingTemplateName ? 'Update Budget' : 'Create Template')}
+              <Button 
+                type="submit" 
+                className="flex-1 transition-all duration-200 hover:scale-[1.02]" 
+                disabled={!templateData.template_name || saving}
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {editingTemplateName ? 'Updating...' : 'Creating...'}
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" />
+                    {editingTemplateName ? 'Update Budget' : 'Create Template'}
+                  </>
+                )}
               </Button>
-              <Button type="button" variant="outline" onClick={onClose}>
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={onClose} 
+                className="transition-all duration-200 hover:scale-[1.02]"
+              >
                 Cancel
               </Button>
             </div>
@@ -363,13 +445,104 @@ const EnvelopeBudgetingPage: React.FC = () => {
     );
   };
 
+  // Dynamic skeleton loading instead of static spinner
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
         <div className="container mx-auto px-4 py-8">
-          <div className="text-center">
-            <p className="text-lg">Loading budget data...</p>
+          {/* Header Skeleton */}
+          <div className="mb-8">
+            <div className="h-8 bg-gray-200 rounded w-48 mb-2 animate-pulse"></div>
+            <div className="h-4 bg-gray-200 rounded w-64 animate-pulse"></div>
           </div>
+
+          {/* Controls Skeleton */}
+          <div className="flex justify-between items-center mb-8">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <div className="h-4 bg-gray-200 rounded w-16 animate-pulse"></div>
+                <div className="h-10 bg-gray-200 rounded w-36 animate-pulse"></div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-4 bg-gray-200 rounded w-12 animate-pulse"></div>
+                <div className="h-10 bg-gray-200 rounded w-36 animate-pulse"></div>
+              </div>
+            </div>
+            <div className="h-10 bg-gray-200 rounded w-32 animate-pulse"></div>
+          </div>
+
+          {/* Summary Cards Skeleton */}
+          <div className="grid gap-6 md:grid-cols-4 mb-8">
+            {[1, 2, 3, 4].map((i) => (
+              <Card key={i} className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <div className="h-4 bg-gray-200 rounded w-20 animate-pulse"></div>
+                  <div className="h-4 w-4 bg-gray-200 rounded animate-pulse"></div>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-8 bg-gray-200 rounded w-16 mb-1 animate-pulse"></div>
+                  <div className="h-3 bg-gray-200 rounded w-24 animate-pulse"></div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Budget Analysis Skeleton */}
+          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 mb-8">
+            <CardHeader>
+              <div className="h-6 bg-gray-200 rounded w-48 mb-2 animate-pulse"></div>
+              <div className="h-4 bg-gray-200 rounded w-64 animate-pulse"></div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="space-y-3 p-3 rounded-lg border border-gray-200">
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-3">
+                        <div className="h-5 bg-gray-200 rounded w-20 animate-pulse"></div>
+                        <div className="h-4 bg-gray-200 rounded w-16 animate-pulse"></div>
+                      </div>
+                      <div className="text-right">
+                        <div className="h-4 bg-gray-200 rounded w-24 mb-1 animate-pulse"></div>
+                        <div className="h-3 bg-gray-200 rounded w-20 animate-pulse"></div>
+                      </div>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-3 animate-pulse"></div>
+                    <div className="flex justify-between">
+                      <div className="h-3 bg-gray-200 rounded w-16 animate-pulse"></div>
+                      <div className="h-3 bg-gray-200 rounded w-20 animate-pulse"></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Templates Skeleton */}
+          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+            <CardHeader>
+              <div className="h-6 bg-gray-200 rounded w-32 animate-pulse"></div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex justify-between items-center p-4 border rounded-lg">
+                    <div>
+                      <div className="h-5 bg-gray-200 rounded w-32 mb-1 animate-pulse"></div>
+                      <div className="h-4 bg-gray-200 rounded w-48 mb-1 animate-pulse"></div>
+                      <div className="h-3 bg-gray-200 rounded w-36 animate-pulse"></div>
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="h-8 bg-gray-200 rounded w-16 animate-pulse"></div>
+                      <div className="h-8 w-8 bg-gray-200 rounded animate-pulse"></div>
+                      <div className="h-8 w-8 bg-gray-200 rounded animate-pulse"></div>
+                      <div className="h-8 w-8 bg-gray-200 rounded animate-pulse"></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     );
@@ -378,21 +551,19 @@ const EnvelopeBudgetingPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
       <div className="container mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="mb-8">
+        <div className="mb-8 transition-all duration-300">
           <h1 className="text-3xl font-bold text-primary mb-2">
             Envelope Budgeting
           </h1>
           <p className="text-muted-foreground">Allocate your money to specific spending categories</p>
         </div>
 
-        {/* Controls */}
         <div className="flex justify-between items-center mb-8">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <Label>Template:</Label>
-              <Select value={selectedTemplate} onValueChange={setSelectedTemplate}>
-                <SelectTrigger className="min-w-[150px]">
+              <Select value={selectedTemplate} onValueChange={optimisticTemplateChange}>
+                <SelectTrigger className="min-w-[150px] transition-all duration-200 hover:border-primary/50 focus:border-primary">
                   <SelectValue placeholder="Select template" />
                 </SelectTrigger>
                 <SelectContent>
@@ -403,6 +574,13 @@ const EnvelopeBudgetingPage: React.FC = () => {
                   ))}
                 </SelectContent>
               </Select>
+              {backgroundLoading && (
+                <div className="flex space-x-1">
+                  <div className="w-1 h-1 bg-primary rounded-full animate-pulse"></div>
+                  <div className="w-1 h-1 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.1s' }}></div>
+                  <div className="w-1 h-1 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                </div>
+              )}
             </div>
             
             <div className="flex items-center gap-2">
@@ -410,56 +588,59 @@ const EnvelopeBudgetingPage: React.FC = () => {
               <Input
                 type="month"
                 value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="min-w-[150px]"
+                onChange={(e) => optimisticMonthChange(e.target.value)}
+                className="min-w-[150px] transition-all duration-200 hover:border-primary/50 focus:border-primary"
               />
             </div>
           </div>
 
           <div className="flex gap-3">
-            <Button variant="outline" onClick={() => setShowCreateTemplate(true)}>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowCreateTemplate(true)}
+              className="transition-all duration-200 hover:scale-[1.02] hover:shadow-md"
+            >
               <Plus className="mr-2 h-4 w-4" />
               New Template
             </Button>
           </div>
         </div>
 
-        {/* Summary Cards */}
         {summary && (
           <div className="grid gap-6 md:grid-cols-4 mb-8">
-            <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+            <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg hover:scale-[1.02]">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Total Budgeted</CardTitle>
                 <Target className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(summary.totalBudgeted)}</div>
+                <div className="text-2xl font-bold transition-all duration-300">{formatCurrency(summary.totalBudgeted)}</div>
                 <p className="text-xs text-muted-foreground">
                   Across all categories
                 </p>
               </CardContent>
             </Card>
 
-            <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+            <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg hover:scale-[1.02]">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Total Spent</CardTitle>
                 <DollarSign className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-red-600">{formatCurrency(summary.totalActual)}</div>
+                <div className="text-2xl font-bold text-red-600 transition-all duration-300">{formatCurrency(summary.totalActual)}</div>
                 <p className="text-xs text-muted-foreground">
                   {summary.budgetUtilization.toFixed(1)}% of budget
                 </p>
               </CardContent>
             </Card>
 
-            <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+            <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg hover:scale-[1.02]">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Remaining</CardTitle>
                 <TrendingUp className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className={`text-2xl font-bold ${summary.totalRemaining >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                <div className={`text-2xl font-bold transition-all duration-300 ${summary.totalRemaining >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                   {formatCurrency(summary.totalRemaining)}
                 </div>
                 <p className="text-xs text-muted-foreground">
@@ -468,13 +649,13 @@ const EnvelopeBudgetingPage: React.FC = () => {
               </CardContent>
             </Card>
 
-            <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+            <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg hover:scale-[1.02]">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Categories</CardTitle>
                 <BarChart3 className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{analysis.length}</div>
+                <div className="text-2xl font-bold transition-all duration-300">{analysis.length}</div>
                 <p className="text-xs text-muted-foreground">
                   {summary.overBudgetCategories} over budget
                 </p>
@@ -483,9 +664,8 @@ const EnvelopeBudgetingPage: React.FC = () => {
           </div>
         )}
 
-        {/* Budget Analysis */}
         {analysis.length > 0 ? (
-          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 mb-8">
+          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 mb-8 transition-all duration-300 hover:shadow-lg">
             <CardHeader>
               <CardTitle>Budget vs Actual Spending</CardTitle>
               <p className="text-sm text-muted-foreground">
@@ -495,11 +675,11 @@ const EnvelopeBudgetingPage: React.FC = () => {
             <CardContent>
               <div className="space-y-4">
                 {analysis.map((item) => (
-                  <div key={item.category} className="space-y-3">
+                  <div key={item.category} className="space-y-3 transition-all duration-300 hover:bg-gray-50 p-3 rounded-lg hover:scale-[1.005]">
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-3">
                         <span className="font-medium">{item.category}</span>
-                        <span className={`text-xs px-2 py-1 rounded-full border ${getBudgetStatusColor(item.percentage, item.has_budget, item.unbudgeted_spending)}`}>
+                        <span className={`text-xs px-2 py-1 rounded-full border transition-all duration-300 ${getBudgetStatusColor(item.percentage, item.has_budget, item.unbudgeted_spending)}`}>
                           {getBudgetStatusLabel(item.percentage, item.has_budget, item.unbudgeted_spending)}
                         </span>
                       </div>
@@ -521,7 +701,7 @@ const EnvelopeBudgetingPage: React.FC = () => {
                     
                     <div className="w-full bg-gray-200 rounded-full h-3">
                       <div 
-                        className={`h-3 rounded-full transition-all duration-300 ${
+                        className={`h-3 rounded-full transition-all duration-500 ${
                           item.unbudgeted_spending ? 'bg-purple-500' :
                           item.percentage > 100 ? 'bg-red-500' : 
                           item.percentage >= 100 ? 'bg-orange-500' :
@@ -547,14 +727,17 @@ const EnvelopeBudgetingPage: React.FC = () => {
             </CardContent>
           </Card>
         ) : (
-          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 mb-8">
+          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 mb-8 transition-all duration-300 hover:shadow-lg">
             <CardContent className="text-center py-12">
-              <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
               <h3 className="text-lg font-semibold mb-2">No Budget Template Found</h3>
               <p className="text-muted-foreground mb-4">
                 Create your first budget template to start envelope budgeting
               </p>
-              <Button onClick={() => setShowCreateTemplate(true)}>
+              <Button 
+                onClick={() => setShowCreateTemplate(true)}
+                className="transition-all duration-200 hover:scale-[1.02] hover:shadow-md"
+              >
                 <Plus className="mr-2 h-4 w-4" />
                 Create Budget Template
               </Button>
@@ -562,112 +745,98 @@ const EnvelopeBudgetingPage: React.FC = () => {
           </Card>
         )}
 
-        {/* Budget Templates List */}
         {templates.length > 0 && (
-          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg">
             <CardHeader>
               <CardTitle>Budget Templates</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {templates.map((template) => (
-                  <div key={template.template_name} className="flex justify-between items-center p-4 border rounded-lg">
-                    <div>
-                      <h4 className="font-medium">{template.template_name}</h4>
-                      <p className="text-sm text-muted-foreground">
-                        {template.category_count} categories - {formatCurrency(template.total_budget)} total budget
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Last updated: {new Date(template.last_updated).toLocaleDateString()}
-                      </p>
-                    </div>
-                    
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant={selectedTemplate === template.template_name ? "default" : "outline"}
-                        onClick={() => setSelectedTemplate(template.template_name)}
-                      >
-                        {selectedTemplate === template.template_name ? 'Selected' : 'Select'}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          setEditingTemplate(template.template_name);
-                          setShowEditTemplate(true);
-                        }}
-                        title="Edit Budget"
-                      >
-                        <Edit2 className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={async () => {
-                          const targetMonth = prompt('Copy to which month? (YYYY-MM format)', selectedMonth);
-                          if (targetMonth) {
-                            try {
-                              const response = await fetch(`${API_BASE_URL}/api/budget-templates/${template.template_name}/copy`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                  source_month: selectedMonth,
-                                  target_month: targetMonth,
-                                  apply_rollover: true
-                                })
-                              });
-                              
-                              if (response.ok) {
-                                alert(`Template copied to ${targetMonth}!`);
-                                loadData();
-                              }
-                            } catch (error) {
-                              console.error('Error copying template:', error);
-                            }
-                          }
-                        }}
-                        title="Copy Template"
-                      >
-                        <Copy className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={async () => {
-                          if (window.confirm(`Delete template "${template.template_name}"?`)) {
-                            try {
-                              const response = await fetch(`${API_BASE_URL}/api/budget-templates/${template.template_name}`, {
-                                method: 'DELETE'
-                              });
-                              
-                              if (response.ok) {
-                                // If deleting currently selected template, reset selection
-                                if (selectedTemplate === template.template_name) {
-                                  localStorage.removeItem('spendsmart_selected_budget_template');
-                                  setSelectedTemplate('Default');
+                {templates.map((template) => {
+                  const isDeleting = pendingDeletes.has(template.template_name);
+                  
+                  return (
+                    <div 
+                      key={template.template_name} 
+                      className={`flex justify-between items-center p-4 border rounded-lg transition-all duration-300 ${
+                        isDeleting 
+                          ? 'opacity-50 bg-red-50 border-red-200' 
+                          : 'hover:shadow-sm hover:bg-gray-50 hover:scale-[1.005]'
+                      }`}
+                    >
+                      <div>
+                        <h4 className="font-medium">{template.template_name}</h4>
+                        <p className="text-sm text-muted-foreground">
+                          {template.category_count} categories - {formatCurrency(template.total_budget)} total budget
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Last updated: {new Date(template.last_updated).toLocaleDateString()}
+                        </p>
+                      </div>
+                      
+                      <div className="flex gap-2">
+                        {!isDeleting && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant={selectedTemplate === template.template_name ? "default" : "outline"}
+                              onClick={() => optimisticTemplateChange(template.template_name)}
+                              className="transition-all duration-200 hover:scale-[1.05]"
+                            >
+                              {selectedTemplate === template.template_name ? 'Selected' : 'Select'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setEditingTemplate(template.template_name);
+                                setShowEditTemplate(true);
+                              }}
+                              title="Edit Budget"
+                              className="transition-all duration-200 hover:scale-[1.05] hover:bg-blue-50"
+                            >
+                              <Edit2 className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={async () => {
+                                const targetMonth = prompt('Copy to which month? (YYYY-MM format)', selectedMonth);
+                                if (targetMonth) {
+                                  optimisticTemplateCopy(template.template_name, selectedMonth, targetMonth);
                                 }
-                                loadData();
-                              }
-                            } catch (error) {
-                              console.error('Error deleting template:', error);
-                            }
-                          }
-                        }}
-                        className="text-red-500 hover:text-red-600"
-                        title="Delete Template"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
+                              }}
+                              title="Copy Template"
+                              className="transition-all duration-200 hover:scale-[1.05] hover:bg-green-50"
+                            >
+                              <Copy className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => optimisticTemplateDelete(template.template_name)}
+                              className="text-red-500 hover:text-red-600 transition-all duration-200 hover:scale-[1.05] hover:bg-red-50"
+                              title="Delete Template"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </>
+                        )}
+                        {isDeleting && (
+                          <div className="flex items-center gap-2">
+                            <Loader2 className="h-4 w-4 animate-spin text-red-500" />
+                            <span className="text-sm text-red-600 font-medium">Deleting...</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
         )}
 
-        {/* Modals */}
         <TemplateForm
           isOpen={showCreateTemplate}
           onClose={() => setShowCreateTemplate(false)}

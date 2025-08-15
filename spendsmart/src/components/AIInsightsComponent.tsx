@@ -1,6 +1,6 @@
 // src/components/AIInsightsComponent.tsx
 import { API_BASE_URL } from '../config/api';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -24,8 +24,47 @@ import {
   Eye,
   TrendingDown,
   ArrowRight,
-  Info
+  Info,
+  X
 } from 'lucide-react';
+
+// Toast System for Error Feedback
+interface Toast {
+  id: number;
+  message: string;
+  type: 'success' | 'error' | 'info';
+  duration?: number;
+}
+
+const ToastContainer: React.FC<{ toasts: Toast[]; removeToast: (id: number) => void }> = ({ 
+  toasts, 
+  removeToast 
+}) => {
+  return (
+    <div className="fixed top-4 right-4 z-50 space-y-2">
+      {toasts.map((toast) => (
+        <div
+          key={toast.id}
+          className={`max-w-md px-4 py-3 rounded-lg shadow-lg border flex items-center justify-between animate-in slide-in-from-right-full duration-300 ${
+            toast.type === 'error' 
+              ? 'bg-red-50 border-red-200 text-red-800' 
+              : toast.type === 'success'
+              ? 'bg-green-50 border-green-200 text-green-800'
+              : 'bg-blue-50 border-blue-200 text-blue-800'
+          }`}
+        >
+          <span className="text-sm font-medium">{toast.message}</span>
+          <button
+            onClick={() => removeToast(toast.id)}
+            className="ml-3 text-gray-400 hover:text-gray-600"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+};
 
 interface Prediction {
   month: string;
@@ -99,40 +138,109 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
   selectedMonth, 
   budgetTemplate = 'Default' 
 }) => {
+  // Core state
   const [insights, setInsights] = useState<AIInsights | null>(null);
   const [loading, setLoading] = useState(false);
+  const [backgroundRefresh, setBackgroundRefresh] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [selectedPredictionMonth, setSelectedPredictionMonth] = useState<string>('');
+  
+  // Toast system state
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastIdRef = useRef(0);
 
-  // Load AI insights
-  const loadInsights = async () => {
-    setLoading(true);
+  // Toast functions
+  const addToast = (message: string, type: Toast['type'] = 'info', duration = 5000) => {
+    const id = ++toastIdRef.current;
+    const newToast: Toast = { id, message, type, duration };
+    
+    setToasts(prev => [...prev, newToast]);
+    
+    if (duration > 0) {
+      setTimeout(() => removeToast(id), duration);
+    }
+  };
+
+  const removeToast = (id: number) => {
+    setToasts(prev => prev.filter(toast => toast.id !== id));
+  };
+
+  // Enhanced retry logic with exponential backoff
+  const retryWithBackoff = async (fn: () => Promise<any>, maxRetries = 3) => {
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        return await fn();
+      } catch (error) {
+        if (i === maxRetries - 1) throw error;
+        
+        const delay = Math.min(1000 * Math.pow(2, i), 5000);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  };
+
+  // Optimistic load insights with immediate UI feedback
+  const loadInsights = async (showOptimisticLoading = true) => {
+    // For initial load, show full loading screen
+    if (!insights && showOptimisticLoading) {
+      setLoading(true);
+    } else {
+      // For refreshes, show background loading indicator
+      setBackgroundRefresh(true);
+    }
+    
     setError(null);
     
     try {
-      const response = await fetch(`${API_BASE_URL}/api/analytics/insights?template=${budgetTemplate}`);
+      const response = await retryWithBackoff(() => 
+        fetch(`${API_BASE_URL}/api/analytics/insights?template=${budgetTemplate}`)
+      );
+      
       if (!response.ok) {
-        throw new Error('Failed to load AI insights');
+        throw new Error(`Failed to load insights: ${response.status} ${response.statusText}`);
       }
       
       const data = await response.json();
+      
+      // Optimistically update the UI
       setInsights(data);
       setLastUpdated(new Date());
       
       // Set default selected prediction month to next month
       if (data.predictions.success && data.predictions.data.length > 0) {
-        setSelectedPredictionMonth(data.predictions.data[0].month);
+        setSelectedPredictionMonth(prev => 
+          prev || data.predictions.data[0].month
+        );
       }
+      
     } catch (err) {
       console.error('Error loading AI insights:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load insights');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load insights';
+      
+      // Only show loading error if we don't have existing data
+      if (!insights) {
+        setError(errorMessage);
+      } else {
+        // If we have existing data, just show a toast
+        addToast(`Failed to refresh insights: ${errorMessage}`, 'error');
+      }
     } finally {
       setLoading(false);
+      setBackgroundRefresh(false);
     }
   };
 
-  // Load insights on component mount
+  // Optimistic prediction month selection
+  const handlePredictionMonthChange = (newMonth: string) => {
+    // Immediately update UI
+    setSelectedPredictionMonth(newMonth);
+    
+    // Add subtle visual feedback
+    addToast(`Switched to ${insights?.predictions.data.find(p => p.month === newMonth)?.monthName || newMonth} forecast`, 'info', 2000);
+  };
+
+  // Load insights on component mount and dependency changes
   useEffect(() => {
     loadInsights();
   }, [selectedMonth, budgetTemplate]);
@@ -195,54 +303,66 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
     return insights;
   };
 
+  // Optimistic loading state with existing data
   if (loading && !insights) {
     return (
-      <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
-        <CardContent className="p-6">
-          <div className="flex items-center justify-center space-x-3">
-            <Bot className="h-6 w-6 text-primary animate-pulse" />
-            <div className="text-lg font-medium">Analyzing your spending patterns...</div>
-          </div>
-          <div className="mt-4 space-y-2">
-            <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-primary to-primary/60 animate-pulse"></div>
+      <div className="space-y-6">
+        <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-center space-x-3">
+              <Bot className="h-6 w-6 text-primary animate-pulse" />
+              <div className="text-lg font-medium">Analyzing your spending patterns...</div>
             </div>
-            <p className="text-sm text-muted-foreground text-center">
-              Generating predictions and detecting anomalies using statistical analysis
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+            <div className="mt-4 space-y-2">
+              <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-primary to-primary/60 animate-pulse"></div>
+              </div>
+              <p className="text-sm text-muted-foreground text-center">
+                Generating predictions and detecting anomalies using statistical analysis
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+      </div>
     );
   }
 
-  if (error) {
+  if (error && !insights) {
     return (
-      <Card className="border-0 shadow-md bg-gradient-to-br from-red-50 to-red-100">
-        <CardContent className="p-6">
-          <div className="flex items-center space-x-3 mb-4">
-            <XCircle className="h-6 w-6 text-red-500" />
-            <div className="text-lg font-medium text-red-800">AI Insights Unavailable</div>
-          </div>
-          <p className="text-red-700 mb-4">{error}</p>
-          <Button onClick={loadInsights} variant="outline" className="border-red-300 text-red-700">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Try Again
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="space-y-6">
+        <Card className="border-0 shadow-md bg-gradient-to-br from-red-50 to-red-100">
+          <CardContent className="p-6">
+            <div className="flex items-center space-x-3 mb-4">
+              <XCircle className="h-6 w-6 text-red-500" />
+              <div className="text-lg font-medium text-red-800">AI Insights Unavailable</div>
+            </div>
+            <p className="text-red-700 mb-4">{error}</p>
+            <Button 
+              onClick={() => loadInsights()} 
+              variant="outline" 
+              className="border-red-300 text-red-700"
+              disabled={loading}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              Try Again
+            </Button>
+          </CardContent>
+        </Card>
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+      </div>
     );
   }
 
   if (!insights) {
-    return null;
+    return <ToastContainer toasts={toasts} removeToast={removeToast} />;
   }
 
   const selectedPrediction = getSelectedPrediction();
 
   return (
     <div className="space-y-6">
-      {/* AI Insights Header */}
+      {/* AI Insights Header with Background Refresh Indicator */}
       <Card className="border-0 shadow-md bg-gradient-to-br from-primary/5 to-primary/10">
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -261,16 +381,25 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
               {lastUpdated && (
                 <div className="text-xs text-muted-foreground">
                   Updated {lastUpdated.toLocaleTimeString()}
+                  {backgroundRefresh && (
+                    <span className="ml-2 inline-flex items-center">
+                      <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
+                    </span>
+                  )}
                 </div>
               )}
               <Button 
-                onClick={loadInsights} 
+                onClick={() => loadInsights(false)} 
                 variant="outline" 
                 size="sm"
-                disabled={loading}
+                disabled={loading || backgroundRefresh}
+                className="relative"
               >
-                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`h-4 w-4 mr-2 ${backgroundRefresh ? 'animate-spin' : ''}`} />
                 Refresh
+                {backgroundRefresh && (
+                  <div className="absolute inset-0 bg-primary/5 rounded"></div>
+                )}
               </Button>
             </div>
           </div>
@@ -359,7 +488,7 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
                 </CardContent>
               </Card>
 
-              {/* Month Selector for Detailed View */}
+              {/* Optimistic Month Selector */}
               {insights.predictions.data.length > 1 && (
                 <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
                   <CardContent className="p-4">
@@ -367,8 +496,8 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
                       <label className="text-sm font-medium">View Detailed Forecast:</label>
                       <select 
                         value={selectedPredictionMonth}
-                        onChange={(e) => setSelectedPredictionMonth(e.target.value)}
-                        className="px-3 py-2 border rounded-lg text-sm bg-card"
+                        onChange={(e) => handlePredictionMonthChange(e.target.value)}
+                        className="px-3 py-2 border rounded-lg text-sm bg-card transition-all duration-200 hover:border-primary/50 focus:border-primary focus:ring-1 focus:ring-primary"
                       >
                         {insights.predictions.data.map(prediction => (
                           <option key={prediction.month} value={prediction.month}>
@@ -469,7 +598,7 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
                             const seasonalFactor = parseFloat(categoryPred.factors.seasonalAdjustment);
                             
                             return (
-                              <div key={category} className="border rounded-lg p-4 bg-gray-50/50">
+                              <div key={category} className="border rounded-lg p-4 bg-gray-50/50 transition-all duration-300 hover:shadow-md">
                                 <div className="flex items-center justify-between mb-3">
                                   <div className="flex items-center gap-3">
                                     <div className={`w-4 h-4 rounded-full ${
@@ -543,7 +672,7 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
                     <CardContent>
                       <div className="space-y-3">
                         {generateSpendingForecast(selectedPrediction).map((insight, index) => (
-                          <div key={index} className={`p-3 rounded-lg border ${
+                          <div key={index} className={`p-3 rounded-lg border transition-all duration-300 hover:shadow-sm ${
                             insight.type === 'warning' ? 'bg-yellow-50 border-yellow-200' :
                             insight.type === 'positive' ? 'bg-green-50 border-green-200' :
                             'bg-blue-50 border-blue-200'
@@ -595,7 +724,15 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
                       <CardContent>
                         <div className="space-y-3">
                           {insights.predictions.data.map((prediction, index) => (
-                            <div key={prediction.month} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                            <div 
+                              key={prediction.month} 
+                              className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all duration-200 hover:shadow-md ${
+                                prediction.month === selectedPredictionMonth 
+                                  ? 'bg-primary/10 border border-primary/20' 
+                                  : 'bg-gray-50 hover:bg-gray-100'
+                              }`}
+                              onClick={() => handlePredictionMonthChange(prediction.month)}
+                            >
                               <div className="flex items-center gap-3">
                                 <Badge variant={index === 0 ? "default" : "secondary"} className="text-xs">
                                   {index === 0 ? "Next" : `+${index + 1}M`}
@@ -700,13 +837,13 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
                 </CardContent>
               </Card>
 
-              {/* Detailed Anomaly List */}
+              {/* Detailed Anomaly List with Hover Effects */}
               <div className="space-y-3">
                 {insights.anomalies.data.map((anomaly, index) => {
                   const AnomalyIcon = getAnomalyIcon(anomaly.type);
                   
                   return (
-                    <Card key={index} className={`border-0 shadow-md ${getSeverityColor(anomaly.severity)} border`}>
+                    <Card key={index} className={`border-0 shadow-md ${getSeverityColor(anomaly.severity)} border transition-all duration-300 hover:shadow-lg hover:scale-[1.01]`}>
                       <CardContent className="p-4">
                         <div className="flex items-start space-x-3">
                           <div className="p-2 rounded-full bg-white/80">
@@ -800,6 +937,9 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Toast Container */}
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
     </div>
   );
 };

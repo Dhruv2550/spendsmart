@@ -29,7 +29,10 @@ import {
   Zap,
   Car,
   Check,
-  X
+  X,
+  Info,
+  Loader2,
+  Undo2
 } from 'lucide-react';
 
 interface RecurringTransaction {
@@ -38,16 +41,16 @@ interface RecurringTransaction {
   type: 'income' | 'expense';
   category: string;
   amount: number;
-  description: string;          // CHANGED: was note
+  description: string;
   frequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
   start_date: string;
   end_date: string | null;
-  next_execution: string;       // Already changed
+  next_execution: string;
   is_active: boolean;
-  last_executed: string | null; // CHANGED: was last_processed
+  last_executed: string | null;
   created_at: string;
-  updated_at: string;           // ADD: your API returns this
-  execution_count: number;      // ADD: your API returns this
+  updated_at: string;
+  execution_count: number;
   reminder_days?: number;
 }
 
@@ -58,6 +61,12 @@ const RecurringTransactionsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [selectedView, setSelectedView] = useState<'all' | 'bills' | 'income'>('all');
+  const [activeTab, setActiveTab] = useState('all');
+  
+  // Optimistic state management (removed toast system)
+  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
+  const [deletedTransactionId, setDeletedTransactionId] = useState<string | null>(null);
+  const [originalTransactions, setOriginalTransactions] = useState<RecurringTransaction[]>([]);
 
   const categories = {
     expense: ["Rent", "Groceries", "Shopping", "Dining", "Transportation", "Entertainment", "Utilities", "Healthcare", "Other"],
@@ -82,9 +91,12 @@ const RecurringTransactionsPage: React.FC = () => {
     loadRecurringTransactions();
   }, []);
 
-  // Process due recurring transactions manually
+  // Process due transactions
   const processRecurringTransactions = async () => {
+    if (processing) return;
+    
     setProcessing(true);
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/recurring/execute-due`, {
         method: 'POST'
@@ -98,92 +110,77 @@ const RecurringTransactionsPage: React.FC = () => {
       // Reload data
       await loadRecurringTransactions();
       
-      // Show success message
-      if (result.executed_count > 0) {
-        alert(`Successfully processed ${result.executed_count} recurring transactions!`);
-      } else {
-        alert(result.message || 'No recurring transactions were due for processing.');
-      }
     } catch (error) {
       console.error('Error processing recurring transactions:', error);
-      alert('Failed to process recurring transactions');
     } finally {
       setProcessing(false);
     }
   };
 
-// Replace the markAsPaid function with this debug version to see what's happening:
+  // Mark as paid with enhanced feedback
+  const markAsPaid = async (transaction: RecurringTransaction) => {
+    const transactionId = transaction.id;
+    setProcessingIds(prev => new Set(prev).add(transactionId));
 
-const markAsPaid = async (transaction: RecurringTransaction) => {
-  console.log('Starting markAsPaid for:', transaction.name);
-  console.log('Current next_execution:', transaction.next_execution);
-  
-  try {
-    // Calculate next due date FIRST to see what we expect
-    const nextDueDate = calculateNextDueDate(transaction.next_execution, transaction.frequency);
-    console.log('Calculated next due date:', nextDueDate);
-    
-    // Create the transaction
-    console.log('Creating transaction...');
-    const response = await fetch(`${API_BASE_URL}/api/records`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: transaction.type,
-        category: transaction.category,
-        amount: transaction.amount,
-        note: `${transaction.description} (Manually paid: ${transaction.name})`,
-        date: new Date().toISOString().split('T')[0]
-      })
-    });
+    try {
+      const nextDueDate = calculateNextDueDate(transaction.next_execution, transaction.frequency);
+      
+      // Create the transaction
+      const response = await fetch(`${API_BASE_URL}/api/records`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: transaction.type,
+          category: transaction.category,
+          amount: transaction.amount,
+          note: `${transaction.description} (Manually paid: ${transaction.name})`,
+          date: new Date().toISOString().split('T')[0]
+        })
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Transaction creation failed:', errorText);
-      throw new Error('Failed to create payment transaction');
+      if (!response.ok) {
+        throw new Error('Failed to create payment transaction');
+      }
+
+      // Update the next_execution date
+      const updateResponse = await fetch(`${API_BASE_URL}/api/recurring/${transaction.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          next_execution: nextDueDate
+        })
+      });
+
+      if (!updateResponse.ok) {
+        throw new Error('Failed to update next due date');
+      }
+
+      // Optimistic update to UI
+      setRecurringTransactions(prev => prev.map(t => 
+        t.id === transactionId 
+          ? { ...t, next_execution: nextDueDate, last_executed: new Date().toISOString().split('T')[0] }
+          : t
+      ));
+      
+    } catch (error) {
+      console.error('Error in markAsPaid:', error);
+    } finally {
+      setProcessingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(transactionId);
+        return newSet;
+      });
     }
-    
-    const transactionResult = await response.json();
-    console.log('Transaction created successfully:', transactionResult);
+  };
 
-    // Update the next_execution date
-    console.log('Updating next_execution to:', nextDueDate);
-    const updateResponse = await fetch(`${API_BASE_URL}/api/recurring/${transaction.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        next_execution: nextDueDate
-      })
-    });
-
-    if (!updateResponse.ok) {
-      const errorData = await updateResponse.text();
-      console.error('Update response error:', errorData);
-      throw new Error('Failed to update next due date');
-    }
-
-    const updateResult = await updateResponse.json();
-    console.log('Update result:', updateResult);
-
-    // Reload the data
-    console.log('Reloading recurring transactions...');
-    await loadRecurringTransactions();
-    console.log('Data reloaded');
-
-    alert(`Marked "${transaction.name}" as paid!\n Next due date: ${new Date(nextDueDate).toLocaleDateString()}`);
-    
-  } catch (error) {
-    console.error('Error in markAsPaid:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    alert('Failed to mark as paid: ' + errorMessage);
-  }
-};
-
-  // Skip this occurrence (just update next due date without creating transaction)
+  // Skip transaction
   const skipThisMonth = async (transaction: RecurringTransaction) => {
-    if (!window.confirm(`Skip this month's "${transaction.name}"? This will move the due date to next occurrence without creating a transaction.`)) {
-      return;
-    }
+    const confirmed = window.confirm(`Skip this month's "${transaction.name}"? This will move the due date to next occurrence without creating a transaction.`);
+    
+    if (!confirmed) return;
+
+    const transactionId = transaction.id;
+    setProcessingIds(prev => new Set(prev).add(transactionId));
 
     try {
       const nextDueDate = calculateNextDueDate(transaction.next_execution, transaction.frequency);
@@ -199,11 +196,21 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
 
       if (!response.ok) throw new Error('Failed to skip transaction');
 
-      await loadRecurringTransactions();
-      alert(`Skipped "${transaction.name}" and updated next due date!`);
+      // Optimistic update
+      setRecurringTransactions(prev => prev.map(t => 
+        t.id === transactionId 
+          ? { ...t, next_execution: nextDueDate }
+          : t
+      ));
+
     } catch (error) {
       console.error('Error skipping transaction:', error);
-      alert('Failed to skip transaction');
+    } finally {
+      setProcessingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(transactionId);
+        return newSet;
+      });
     }
   };
 
@@ -231,24 +238,45 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
 
   // Toggle active status
   const toggleActive = async (id: string) => {
+    const transaction = recurringTransactions.find(t => t.id === id);
+    if (!transaction) return;
+
+    // Optimistic update
+    const newStatus = !transaction.is_active;
+    setRecurringTransactions(prev => prev.map(t => 
+      t.id === id ? { ...t, is_active: newStatus } : t
+    ));
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/recurring/${id}/toggle`, {
-          method: 'PUT'
+        method: 'PUT'
       });
       
       if (!response.ok) throw new Error('Failed to toggle recurring transaction');
       
-      await loadRecurringTransactions();
     } catch (error) {
       console.error('Error toggling recurring transaction:', error);
+      // Rollback optimistic update
+      setRecurringTransactions(prev => prev.map(t => 
+        t.id === id ? { ...t, is_active: !newStatus } : t
+      ));
     }
   };
 
-  // Delete recurring transaction
+  // Delete with undo functionality
   const deleteRecurringTransaction = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this recurring transaction?')) {
-      return;
-    }
+    const transaction = recurringTransactions.find(t => t.id === id);
+    if (!transaction) return;
+
+    const confirmed = window.confirm('Are you sure you want to delete this recurring transaction?');
+    if (!confirmed) return;
+
+    // Store original state for potential undo
+    setOriginalTransactions(recurringTransactions);
+    setDeletedTransactionId(id);
+
+    // Optimistic removal
+    setRecurringTransactions(prev => prev.filter(t => t.id !== id));
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/recurring/${id}`, {
@@ -257,10 +285,42 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
       
       if (!response.ok) throw new Error('Failed to delete recurring transaction');
       
-      await loadRecurringTransactions();
+      // Clear undo option after successful delete
+      setTimeout(() => {
+        setDeletedTransactionId(null);
+        setOriginalTransactions([]);
+      }, 5000);
+
     } catch (error) {
       console.error('Error deleting recurring transaction:', error);
+      // Rollback on error
+      setRecurringTransactions(originalTransactions);
+      setDeletedTransactionId(null);
     }
+  };
+
+  // Undo delete functionality
+  const undoDelete = () => {
+    if (originalTransactions.length > 0) {
+      setRecurringTransactions(originalTransactions);
+      setDeletedTransactionId(null);
+      setOriginalTransactions([]);
+    }
+  };
+
+  // Tab switching
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+  };
+
+  // Form handling
+  const handleShowForm = () => {
+    setShowForm(true);
+  };
+
+  const handleEditTransaction = (transaction: RecurringTransaction) => {
+    setEditingTransaction(transaction);
+    setShowForm(true);
   };
 
   const formatCurrency = (amount: number) => `$${amount.toLocaleString()}`;
@@ -316,8 +376,102 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
         <div className="container mx-auto px-4 py-8">
-          <div className="text-center">
-            <p className="text-lg">Loading bills and recurring transactions...</p>
+          {/* Header Skeleton */}
+          <div className="mb-8">
+            <div className="h-8 bg-gray-200 rounded w-48 mb-2 animate-pulse"></div>
+            <div className="h-4 bg-gray-200 rounded w-64 animate-pulse"></div>
+          </div>
+
+          {/* Action Bar Skeleton */}
+          <div className="flex justify-between items-center mb-8">
+            <div className="flex gap-4">
+              <div className="h-10 bg-gray-200 rounded w-48 animate-pulse"></div>
+              <div className="h-10 bg-gray-200 rounded w-36 animate-pulse"></div>
+            </div>
+            <div className="flex gap-4">
+              <div className="h-8 bg-gray-200 rounded w-32 animate-pulse"></div>
+              <div className="h-8 bg-gray-200 rounded w-28 animate-pulse"></div>
+            </div>
+          </div>
+
+          {/* Overview Cards Skeleton */}
+          <div className="grid gap-6 md:grid-cols-4 mb-8">
+            {[1, 2, 3, 4].map((i) => (
+              <Card key={i} className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <div className="h-4 bg-gray-200 rounded w-20 animate-pulse"></div>
+                  <div className="h-4 w-4 bg-gray-200 rounded animate-pulse"></div>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-8 bg-gray-200 rounded w-16 mb-1 animate-pulse"></div>
+                  <div className="h-3 bg-gray-200 rounded w-24 animate-pulse"></div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Upcoming Bills Skeleton */}
+          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 mb-8">
+            <CardHeader>
+              <div className="h-6 bg-gray-200 rounded w-48 animate-pulse"></div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="p-4 rounded-lg border border-gray-200 bg-gray-50">
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-3">
+                        <div className="h-5 w-5 bg-gray-200 rounded animate-pulse"></div>
+                        <div>
+                          <div className="h-5 bg-gray-200 rounded w-32 mb-1 animate-pulse"></div>
+                          <div className="h-3 bg-gray-200 rounded w-48 animate-pulse"></div>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <div className="h-8 bg-gray-200 rounded w-24 animate-pulse"></div>
+                        <div className="h-8 bg-gray-200 rounded w-16 animate-pulse"></div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Tabs Skeleton */}
+          <div className="space-y-6">
+            <div className="h-10 bg-gray-200 rounded w-full animate-pulse"></div>
+            
+            {/* Transaction Cards Skeleton */}
+            <div className="space-y-4">
+              {[1, 2, 3].map((i) => (
+                <Card key={i} className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+                  <CardContent className="p-6">
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="flex items-center gap-3 flex-1">
+                        <div className="h-3 w-3 bg-gray-200 rounded-full animate-pulse"></div>
+                        <div className="h-6 bg-gray-200 rounded w-32 animate-pulse"></div>
+                        <div className="h-5 bg-gray-200 rounded w-16 animate-pulse"></div>
+                      </div>
+                      <div className="flex gap-2">
+                        <div className="h-8 w-8 bg-gray-200 rounded animate-pulse"></div>
+                        <div className="h-8 w-8 bg-gray-200 rounded animate-pulse"></div>
+                        <div className="h-8 w-8 bg-gray-200 rounded animate-pulse"></div>
+                        <div className="h-8 w-8 bg-gray-200 rounded animate-pulse"></div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-4 gap-4">
+                      {[1, 2, 3, 4].map((j) => (
+                        <div key={j}>
+                          <div className="h-3 bg-gray-200 rounded w-16 mb-1 animate-pulse"></div>
+                          <div className="h-4 bg-gray-200 rounded w-20 animate-pulse"></div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -327,8 +481,25 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
       <div className="container mx-auto px-4 py-8">
+        {/* Undo delete notification */}
+        {deletedTransactionId && (
+          <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-lg border shadow-lg bg-orange-50 text-orange-800 border-orange-200">
+            <AlertCircle className="h-4 w-4" />
+            <span className="text-sm font-medium">Transaction deleted</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={undoDelete}
+              className="ml-2 text-orange-700 hover:text-orange-900 transition-colors duration-200"
+            >
+              <Undo2 className="h-3 w-3 mr-1" />
+              Undo
+            </Button>
+          </div>
+        )}
+
         {/* Header */}
-        <div className="mb-8">
+        <div className="mb-8 transition-all duration-300">
           <h1 className="text-3xl font-bold text-primary mb-2">
             Bills & Recurring
           </h1>
@@ -338,7 +509,10 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
         {/* Action Bar */}
         <div className="flex justify-between items-center mb-8">
           <div className="flex items-center gap-4">
-            <Button onClick={() => setShowForm(true)}>
+            <Button 
+              onClick={handleShowForm}
+              className="transition-all duration-200 hover:scale-[1.02] hover:shadow-md"
+            >
               <Plus className="mr-2 h-4 w-4" />
               Add Recurring Transaction
             </Button>
@@ -346,6 +520,7 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
               variant="outline" 
               onClick={processRecurringTransactions}
               disabled={processing}
+              className="transition-all duration-200 hover:scale-[1.02] hover:shadow-md"
             >
               {processing ? (
                 <>
@@ -363,14 +538,14 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
           
           <div className="flex items-center gap-4">
             {dueSoon.length > 0 && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 transition-all duration-200 hover:bg-blue-100">
                 <span className="text-sm font-medium text-blue-700">
                   {dueSoon.length} due within 7 days
                 </span>
               </div>
             )}
             {dueTransactions.length > 0 && (
-              <div className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+              <div className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 transition-all duration-200 hover:bg-orange-100">
                 <span className="text-sm font-medium text-orange-700">
                   {dueTransactions.length} due now
                 </span>
@@ -381,39 +556,39 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
 
         {/* Overview Cards */}
         <div className="grid gap-6 md:grid-cols-4 mb-8">
-          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg hover:scale-[1.02]">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Active Bills</CardTitle>
               <CreditCard className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{bills.length}</div>
+              <div className="text-2xl font-bold transition-all duration-300">{bills.length}</div>
               <p className="text-xs text-muted-foreground">
                 {dueTransactions.filter(t => t.type === 'expense').length} due now
               </p>
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg hover:scale-[1.02]">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Due Soon</CardTitle>
               <Bell className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-blue-600">{dueSoon.length}</div>
+              <div className="text-2xl font-bold text-blue-600 transition-all duration-300">{dueSoon.length}</div>
               <p className="text-xs text-muted-foreground">
                 Next 7 days
               </p>
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg hover:scale-[1.02]">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Monthly Bills</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-600">
+              <div className="text-2xl font-bold text-red-600 transition-all duration-300">
                 {formatCurrency(
                   bills
                     .filter(t => t.frequency === 'monthly')
@@ -426,13 +601,13 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg hover:scale-[1.02]">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Monthly Income</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">
+              <div className="text-2xl font-bold text-green-600 transition-all duration-300">
                 {formatCurrency(
                   incomeTransactions
                     .filter(t => t.frequency === 'monthly')
@@ -448,7 +623,7 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
 
         {/* Upcoming Bills Dashboard */}
         {upcomingBills.length > 0 && (
-          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 mb-8">
+          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 mb-8 transition-all duration-300 hover:shadow-lg">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Calendar className="h-5 w-5" />
@@ -463,9 +638,10 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
                   const isOverdue = daysUntilDue < 0;
                   const dueSoon = daysUntilDue > 0 && daysUntilDue <= 7;
                   const CategoryIcon = getCategoryIcon(bill.category);
+                  const isProcessing = processingIds.has(bill.id);
 
                   return (
-                    <div key={bill.id} className={`p-4 rounded-lg border ${
+                    <div key={bill.id} className={`p-4 rounded-lg border transition-all duration-300 hover:scale-[1.005] ${
                       isOverdue ? 'border-red-200 bg-red-50' :
                       isDue ? 'border-orange-200 bg-orange-50' :
                       dueSoon ? 'border-blue-200 bg-blue-50' :
@@ -473,7 +649,7 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
                     }`}>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <CategoryIcon className={`h-5 w-5 ${
+                          <CategoryIcon className={`h-5 w-5 transition-colors duration-200 ${
                             isOverdue ? 'text-red-600' :
                             isDue ? 'text-orange-600' :
                             dueSoon ? 'text-blue-600' :
@@ -489,7 +665,7 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
                         
                         <div className="flex items-center gap-3">
                           <div className="text-right">
-                            <p className={`font-medium text-sm ${
+                            <p className={`font-medium text-sm transition-colors duration-200 ${
                               isOverdue ? 'text-red-600' :
                               isDue ? 'text-orange-600' :
                               dueSoon ? 'text-blue-600' :
@@ -509,17 +685,28 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
                             <Button
                               size="sm"
                               onClick={() => markAsPaid(bill)}
-                              className="bg-green-600 hover:bg-green-700 text-white"
+                              disabled={isProcessing}
+                              className="bg-green-600 hover:bg-green-700 text-white transition-all duration-200 hover:scale-[1.05] disabled:opacity-50"
                             >
-                              <Check className="h-3 w-3 mr-1" />
+                              {isProcessing ? (
+                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                              ) : (
+                                <Check className="h-3 w-3 mr-1" />
+                              )}
                               Mark Paid
                             </Button>
                             <Button
                               size="sm"
                               variant="outline"
                               onClick={() => skipThisMonth(bill)}
+                              disabled={isProcessing}
+                              className="transition-all duration-200 hover:scale-[1.05] hover:bg-gray-50 disabled:opacity-50"
                             >
-                              <X className="h-3 w-3 mr-1" />
+                              {isProcessing ? (
+                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                              ) : (
+                                <X className="h-3 w-3 mr-1" />
+                              )}
                               Skip
                             </Button>
                           </div>
@@ -534,17 +721,17 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
         )}
 
         {/* Tabs for different views */}
-        <Tabs defaultValue="all" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="all" className="flex items-center gap-2">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
+          <TabsList className="grid w-full grid-cols-3 transition-all duration-200">
+            <TabsTrigger value="all" className="flex items-center gap-2 transition-all duration-200">
               <Repeat className="h-4 w-4" />
               All Recurring
             </TabsTrigger>
-            <TabsTrigger value="bills" className="flex items-center gap-2">
+            <TabsTrigger value="bills" className="flex items-center gap-2 transition-all duration-200">
               <CreditCard className="h-4 w-4" />
               Bills Only
             </TabsTrigger>
-            <TabsTrigger value="income" className="flex items-center gap-2">
+            <TabsTrigger value="income" className="flex items-center gap-2 transition-all duration-200">
               <DollarSign className="h-4 w-4" />
               Income Only
             </TabsTrigger>
@@ -561,46 +748,47 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
                     const daysUntilDue = getDaysUntilDue(transaction.next_execution);
                     const isDue = daysUntilDue <= 0;
                     const isOverdue = daysUntilDue < 0;
+                    const isProcessing = processingIds.has(transaction.id);
 
                     return (
-                      <Card key={transaction.id} className={`border-0 shadow-md bg-gradient-to-br from-card to-card/95 ${
+                      <Card key={transaction.id} className={`border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg hover:scale-[1.005] ${
                         isDue ? 'ring-2 ring-orange-200' : ''
                       }`}>
                         <CardContent className="p-6">
                           <div className="flex justify-between items-start mb-4">
                             <div className="flex-1">
                               <div className="flex items-center gap-3 mb-2">
-                                <div className={`w-3 h-3 rounded-full ${
+                                <div className={`w-3 h-3 rounded-full transition-colors duration-200 ${
                                   transaction.type === 'income' ? 'bg-green-500' : 'bg-red-500'
                                 }`} />
                                 <h3 className="font-semibold text-lg">{transaction.name}</h3>
-                                <span className="text-sm bg-gray-100 px-2 py-1 rounded">
+                                <span className="text-sm bg-gray-100 px-2 py-1 rounded transition-colors duration-200">
                                   {getFrequencyLabel(transaction.frequency)}
                                 </span>
                               </div>
                               
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                                <div>
+                                <div className="transition-all duration-200 hover:bg-gray-50 -mx-2 px-2 py-1 rounded">
                                   <span className="text-muted-foreground">Category:</span>
                                   <p className="font-medium">{transaction.category}</p>
                                 </div>
-                                <div>
+                                <div className="transition-all duration-200 hover:bg-gray-50 -mx-2 px-2 py-1 rounded">
                                   <span className="text-muted-foreground">Amount:</span>
-                                  <p className={`font-medium ${
+                                  <p className={`font-medium transition-colors duration-200 ${
                                     transaction.type === 'income' ? 'text-green-600' : 'text-red-600'
                                   }`}>
                                     {transaction.type === 'income' ? '+' : '-'}{formatCurrency(transaction.amount)}
                                   </p>
                                 </div>
-                                <div>
+                                <div className="transition-all duration-200 hover:bg-gray-50 -mx-2 px-2 py-1 rounded">
                                   <span className="text-muted-foreground">Next Due:</span>
-                                  <p className={`font-medium ${
+                                  <p className={`font-medium transition-colors duration-200 ${
                                     isDue ? 'text-orange-600' : 'text-gray-700'
                                   }`}>
                                     {formatDate(transaction.next_execution)}
                                   </p>
                                 </div>
-                                <div>
+                                <div className="transition-all duration-200 hover:bg-gray-50 -mx-2 px-2 py-1 rounded">
                                   <span className="text-muted-foreground">Status:</span>
                                   <p className="font-medium">
                                     {isOverdue ? (
@@ -626,25 +814,31 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
                                 <Button
                                   size="sm"
                                   onClick={() => markAsPaid(transaction)}
-                                  className="bg-green-600 hover:bg-green-700 text-white"
+                                  disabled={isProcessing}
+                                  className="bg-green-600 hover:bg-green-700 text-white transition-all duration-200 hover:scale-[1.05] disabled:opacity-50"
                                 >
-                                  <Check className="h-3 w-3" />
+                                  {isProcessing ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Check className="h-3 w-3" />
+                                  )}
                                 </Button>
                               )}
                               <Button
                                 size="sm"
                                 variant="outline"
                                 onClick={() => toggleActive(transaction.id)}
+                                disabled={isProcessing}
+                                className="transition-all duration-200 hover:scale-[1.05] hover:bg-blue-50 disabled:opacity-50"
                               >
                                 <Pause className="h-3 w-3" />
                               </Button>
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => {
-                                  setEditingTransaction(transaction);
-                                  setShowForm(true);
-                                }}
+                                onClick={() => handleEditTransaction(transaction)}
+                                disabled={isProcessing}
+                                className="transition-all duration-200 hover:scale-[1.05] hover:bg-blue-50 disabled:opacity-50"
                               >
                                 <Edit2 className="h-3 w-3" />
                               </Button>
@@ -652,7 +846,8 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
                                 size="sm"
                                 variant="outline"
                                 onClick={() => deleteRecurringTransaction(transaction.id)}
-                                className="text-red-500 hover:text-red-600"
+                                disabled={isProcessing}
+                                className="text-red-500 hover:text-red-600 transition-all duration-200 hover:scale-[1.05] hover:bg-red-50 disabled:opacity-50"
                               >
                                 <Trash2 className="h-3 w-3" />
                               </Button>
@@ -660,7 +855,7 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
                           </div>
 
                           {isDue && (
-                            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 transition-all duration-200">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center">
                                   <Clock className="h-4 w-4 text-orange-500 mr-2" />
@@ -673,17 +868,28 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
                                     <Button
                                       size="sm"
                                       onClick={() => markAsPaid(transaction)}
-                                      className="bg-green-600 hover:bg-green-700 text-white"
+                                      disabled={isProcessing}
+                                      className="bg-green-600 hover:bg-green-700 text-white transition-all duration-200 hover:scale-[1.05] disabled:opacity-50"
                                     >
-                                      <Check className="h-3 w-3 mr-1" />
+                                      {isProcessing ? (
+                                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                      ) : (
+                                        <Check className="h-3 w-3 mr-1" />
+                                      )}
                                       Mark Paid
                                     </Button>
                                     <Button
                                       size="sm"
                                       variant="outline"
                                       onClick={() => skipThisMonth(transaction)}
+                                      disabled={isProcessing}
+                                      className="transition-all duration-200 hover:scale-[1.05] hover:bg-gray-50 disabled:opacity-50"
                                     >
-                                      <X className="h-3 w-3 mr-1" />
+                                      {isProcessing ? (
+                                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                      ) : (
+                                        <X className="h-3 w-3 mr-1" />
+                                      )}
                                       Skip
                                     </Button>
                                   </div>
@@ -697,14 +903,17 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
                   })}
                 </div>
               ) : (
-                <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+                <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg">
                   <CardContent className="text-center py-12">
                     <Repeat className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                     <h3 className="text-lg font-semibold mb-2">No recurring transactions yet</h3>
                     <p className="text-muted-foreground mb-4">
                       Set up automatic transactions for bills, salary, and other regular payments
                     </p>
-                    <Button onClick={() => setShowForm(true)}>
+                    <Button 
+                      onClick={handleShowForm}
+                      className="transition-all duration-200 hover:scale-[1.02] hover:shadow-md"
+                    >
                       <Plus className="mr-2 h-4 w-4" />
                       Create First Recurring Transaction
                     </Button>
@@ -726,39 +935,40 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
                     const isDue = daysUntilDue <= 0;
                     const isOverdue = daysUntilDue < 0;
                     const CategoryIcon = getCategoryIcon(bill.category);
+                    const isProcessing = processingIds.has(bill.id);
 
                     return (
-                      <Card key={bill.id} className={`border-0 shadow-md bg-gradient-to-br from-card to-card/95 ${
+                      <Card key={bill.id} className={`border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg hover:scale-[1.005] ${
                         isDue ? 'ring-2 ring-orange-200' : ''
                       }`}>
                         <CardContent className="p-6">
                           <div className="flex justify-between items-start">
                             <div className="flex items-center gap-4 flex-1">
-                              <CategoryIcon className="h-8 w-8 text-red-500" />
+                              <CategoryIcon className="h-8 w-8 text-red-500 transition-colors duration-200" />
                               <div className="flex-1">
                                 <div className="flex items-center gap-3 mb-2">
                                   <h3 className="font-semibold text-lg">{bill.name}</h3>
-                                  <span className="text-sm bg-red-100 text-red-700 px-2 py-1 rounded">
+                                  <span className="text-sm bg-red-100 text-red-700 px-2 py-1 rounded transition-colors duration-200">
                                     {getFrequencyLabel(bill.frequency)}
                                   </span>
                                 </div>
                                 
                                 <div className="grid grid-cols-3 gap-4 text-sm">
-                                  <div>
+                                  <div className="transition-all duration-200 hover:bg-red-50 -mx-2 px-2 py-1 rounded">
                                     <span className="text-muted-foreground">Amount:</span>
                                     <p className="font-medium text-red-600">
                                       {formatCurrency(bill.amount)}
                                     </p>
                                   </div>
-                                  <div>
+                                  <div className="transition-all duration-200 hover:bg-red-50 -mx-2 px-2 py-1 rounded">
                                     <span className="text-muted-foreground">Due Date:</span>
-                                    <p className={`font-medium ${
+                                    <p className={`font-medium transition-colors duration-200 ${
                                       isDue ? 'text-orange-600' : 'text-gray-700'
                                     }`}>
                                       {formatDate(bill.next_execution)}
                                     </p>
                                   </div>
-                                  <div>
+                                  <div className="transition-all duration-200 hover:bg-red-50 -mx-2 px-2 py-1 rounded">
                                     <span className="text-muted-foreground">Status:</span>
                                     <p className="font-medium">
                                       {isOverdue ? (
@@ -781,19 +991,23 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
                                 <Button
                                   size="sm"
                                   onClick={() => markAsPaid(bill)}
-                                  className="bg-green-600 hover:bg-green-700 text-white"
+                                  disabled={isProcessing}
+                                  className="bg-green-600 hover:bg-green-700 text-white transition-all duration-200 hover:scale-[1.05] disabled:opacity-50"
                                 >
-                                  <Check className="h-3 w-3 mr-1" />
+                                  {isProcessing ? (
+                                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                  ) : (
+                                    <Check className="h-3 w-3 mr-1" />
+                                  )}
                                   Mark Paid
                                 </Button>
                               )}
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => {
-                                  setEditingTransaction(bill);
-                                  setShowForm(true);
-                                }}
+                                onClick={() => handleEditTransaction(bill)}
+                                disabled={isProcessing}
+                                className="transition-all duration-200 hover:scale-[1.05] hover:bg-blue-50 disabled:opacity-50"
                               >
                                 <Edit2 className="h-3 w-3" />
                               </Button>
@@ -805,14 +1019,17 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
                   })}
                 </div>
               ) : (
-                <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+                <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg">
                   <CardContent className="text-center py-12">
                     <CreditCard className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                     <h3 className="text-lg font-semibold mb-2">No bills set up yet</h3>
                     <p className="text-muted-foreground mb-4">
                       Add your regular bills like rent, utilities, and credit card payments
                     </p>
-                    <Button onClick={() => setShowForm(true)}>
+                    <Button 
+                      onClick={handleShowForm}
+                      className="transition-all duration-200 hover:scale-[1.02] hover:shadow-md"
+                    >
                       <Plus className="mr-2 h-4 w-4" />
                       Add First Bill
                     </Button>
@@ -831,35 +1048,36 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
                 <div className="grid gap-4">
                   {incomeTransactions.map((income) => {
                     const daysUntilDue = getDaysUntilDue(income.next_execution);
+                    const isProcessing = processingIds.has(income.id);
 
                     return (
-                      <Card key={income.id} className="border-0 shadow-md bg-gradient-to-br from-green-50 to-green-100">
+                      <Card key={income.id} className="border-0 shadow-md bg-gradient-to-br from-green-50 to-green-100 transition-all duration-300 hover:shadow-lg hover:scale-[1.005]">
                         <CardContent className="p-6">
                           <div className="flex justify-between items-start">
                             <div className="flex items-center gap-4 flex-1">
-                              <DollarSign className="h-8 w-8 text-green-500" />
+                              <DollarSign className="h-8 w-8 text-green-500 transition-colors duration-200" />
                               <div className="flex-1">
                                 <div className="flex items-center gap-3 mb-2">
                                   <h3 className="font-semibold text-lg">{income.name}</h3>
-                                  <span className="text-sm bg-green-100 text-green-700 px-2 py-1 rounded">
+                                  <span className="text-sm bg-green-100 text-green-700 px-2 py-1 rounded transition-colors duration-200">
                                     {getFrequencyLabel(income.frequency)}
                                   </span>
                                 </div>
                                 
                                 <div className="grid grid-cols-3 gap-4 text-sm">
-                                  <div>
+                                  <div className="transition-all duration-200 hover:bg-green-100 -mx-2 px-2 py-1 rounded">
                                     <span className="text-muted-foreground">Amount:</span>
                                     <p className="font-medium text-green-600">
                                       +{formatCurrency(income.amount)}
                                     </p>
                                   </div>
-                                  <div>
+                                  <div className="transition-all duration-200 hover:bg-green-100 -mx-2 px-2 py-1 rounded">
                                     <span className="text-muted-foreground">Next Expected:</span>
                                     <p className="font-medium text-gray-700">
                                       {formatDate(income.next_execution)}
                                     </p>
                                   </div>
-                                  <div>
+                                  <div className="transition-all duration-200 hover:bg-green-100 -mx-2 px-2 py-1 rounded">
                                     <span className="text-muted-foreground">In:</span>
                                     <p className="font-medium text-gray-600">
                                       {daysUntilDue <= 0 ? 'Available now' :
@@ -875,10 +1093,9 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => {
-                                  setEditingTransaction(income);
-                                  setShowForm(true);
-                                }}
+                                onClick={() => handleEditTransaction(income)}
+                                disabled={isProcessing}
+                                className="transition-all duration-200 hover:scale-[1.05] hover:bg-green-100 disabled:opacity-50"
                               >
                                 <Edit2 className="h-3 w-3" />
                               </Button>
@@ -890,14 +1107,17 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
                   })}
                 </div>
               ) : (
-                <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+                <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg">
                   <CardContent className="text-center py-12">
                     <DollarSign className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                     <h3 className="text-lg font-semibold mb-2">No recurring income set up</h3>
                     <p className="text-muted-foreground mb-4">
                       Add your regular income like salary, freelance payments, and investments
                     </p>
-                    <Button onClick={() => setShowForm(true)}>
+                    <Button 
+                      onClick={handleShowForm}
+                      className="transition-all duration-200 hover:scale-[1.02] hover:shadow-md"
+                    >
                       <Plus className="mr-2 h-4 w-4" />
                       Add Recurring Income
                     </Button>
@@ -913,53 +1133,59 @@ const markAsPaid = async (transaction: RecurringTransaction) => {
           <div className="mt-8">
             <h3 className="text-lg font-semibold mb-4">Inactive Recurring Transactions</h3>
             <div className="grid gap-4">
-              {inactiveTransactions.map((transaction) => (
-                <Card key={transaction.id} className="border-0 shadow-md bg-gradient-to-br from-gray-50 to-gray-100 opacity-75">
-                  <CardContent className="p-4">
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-3 h-3 rounded-full ${
-                          transaction.type === 'income' ? 'bg-green-300' : 'bg-red-300'
-                        }`} />
-                        <div>
-                          <h4 className="font-medium text-gray-700">{transaction.name}</h4>
-                          <p className="text-sm text-gray-500">
-                            {formatCurrency(transaction.amount)} - {getFrequencyLabel(transaction.frequency)}
-                          </p>
+              {inactiveTransactions.map((transaction) => {
+                const isProcessing = processingIds.has(transaction.id);
+                
+                return (
+                  <Card key={transaction.id} className="border-0 shadow-md bg-gradient-to-br from-gray-50 to-gray-100 opacity-75 transition-all duration-300 hover:opacity-90 hover:shadow-lg hover:scale-[1.005]">
+                    <CardContent className="p-4">
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-3 h-3 rounded-full transition-colors duration-200 ${
+                            transaction.type === 'income' ? 'bg-green-300' : 'bg-red-300'
+                          }`} />
+                          <div>
+                            <h4 className="font-medium text-gray-700">{transaction.name}</h4>
+                            <p className="text-sm text-gray-500">
+                              {formatCurrency(transaction.amount)} - {getFrequencyLabel(transaction.frequency)}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => toggleActive(transaction.id)}
+                            disabled={isProcessing}
+                            className="transition-all duration-200 hover:scale-[1.05] hover:bg-green-50 disabled:opacity-50"
+                          >
+                            <Play className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleEditTransaction(transaction)}
+                            disabled={isProcessing}
+                            className="transition-all duration-200 hover:scale-[1.05] hover:bg-blue-50 disabled:opacity-50"
+                          >
+                            <Edit2 className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => deleteRecurringTransaction(transaction.id)}
+                            disabled={isProcessing}
+                            className="text-red-500 hover:text-red-600 transition-all duration-200 hover:scale-[1.05] hover:bg-red-50 disabled:opacity-50"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
                         </div>
                       </div>
-                      
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => toggleActive(transaction.id)}
-                        >
-                          <Play className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setEditingTransaction(transaction);
-                            setShowForm(true);
-                          }}
-                        >
-                          <Edit2 className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => deleteRecurringTransaction(transaction.id)}
-                          className="text-red-500 hover:text-red-600"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           </div>
         )}
@@ -1023,6 +1249,8 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
     setLoading(true);
     setError('');
 
+    const isEditing = !!transaction;
+
     try {
       const recurringData = {
         name: formData.name,
@@ -1046,20 +1274,20 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             ...recurringData,
-            next_execution: transaction.next_execution // Preserve next due date when editing
+            next_execution: transaction.next_execution
           })
         });
-        } else {
-          // Create new
-          response = await fetch(`${API_BASE_URL}/api/recurring`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              ...recurringData,
-              next_execution: formData.start_date // Set next_execution to start_date for new transactions
-            })
-          });
-        }
+      } else {
+        // Create new
+        response = await fetch(`${API_BASE_URL}/api/recurring`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...recurringData,
+            next_execution: formData.start_date
+          })
+        });
+      }
 
       if (!response.ok) {
         throw new Error(transaction ? 'Failed to update recurring transaction' : 'Failed to create recurring transaction');
@@ -1068,7 +1296,8 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
       onSave();
     } catch (error) {
       console.error('Error saving recurring transaction:', error);
-      setError('Failed to save recurring transaction. Please try again.');
+      const errorMessage = 'Failed to save recurring transaction. Please try again.';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -1083,7 +1312,7 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl w-full mx-4 my-8 max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {isEditing ? 'Edit Recurring Transaction' : 'Create Recurring Transaction'}
@@ -1092,7 +1321,7 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {error && (
-            <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+            <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 transition-all duration-200">
               <p className="text-sm text-destructive">{error}</p>
             </div>
           )}
@@ -1104,13 +1333,14 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
                 value={formData.name}
                 onChange={(e) => handleInputChange('name', e.target.value)}
                 placeholder="Monthly Rent"
+                className="transition-all duration-200 hover:border-primary/50 focus:border-primary"
                 required
               />
             </div>
             <div className="space-y-2">
               <Label>Type</Label>
               <Select value={formData.type} onValueChange={(value) => handleInputChange('type', value)}>
-                <SelectTrigger>
+                <SelectTrigger className="transition-all duration-200 hover:border-primary/50">
                   <SelectValue placeholder="Select type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1129,7 +1359,7 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
                 onValueChange={(value) => handleInputChange('category', value)}
                 disabled={!formData.type}
               >
-                <SelectTrigger>
+                <SelectTrigger className="transition-all duration-200 hover:border-primary/50">
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1149,6 +1379,7 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
                 value={formData.amount}
                 onChange={(e) => handleInputChange('amount', e.target.value)}
                 placeholder="1200.00"
+                className="transition-all duration-200 hover:border-primary/50 focus:border-primary"
                 required
               />
             </div>
@@ -1158,7 +1389,7 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
             <div className="space-y-2">
               <Label>Frequency</Label>
               <Select value={formData.frequency} onValueChange={(value) => handleInputChange('frequency', value)}>
-                <SelectTrigger>
+                <SelectTrigger className="transition-all duration-200 hover:border-primary/50">
                   <SelectValue placeholder="Select frequency" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1175,6 +1406,7 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
                 type="date"
                 value={formData.start_date}
                 onChange={(e) => handleInputChange('start_date', e.target.value)}
+                className="transition-all duration-200 hover:border-primary/50 focus:border-primary"
                 required
               />
             </div>
@@ -1185,7 +1417,7 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
             <div className="space-y-2">
               <Label>Reminder Days Before Due</Label>
               <Select value={formData.reminder_days.toString()} onValueChange={(value) => handleInputChange('reminder_days', parseInt(value))}>
-                <SelectTrigger>
+                <SelectTrigger className="transition-all duration-200 hover:border-primary/50">
                   <SelectValue placeholder="Select reminder days" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1209,16 +1441,18 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
               value={formData.end_date}
               onChange={(e) => handleInputChange('end_date', e.target.value)}
               placeholder="Leave empty for no end date"
+              className="transition-all duration-200 hover:border-primary/50 focus:border-primary"
             />
           </div>
 
           <div className="space-y-2">
-            <Label>description (Optional)</Label>
+            <Label>Description (Optional)</Label>
             <Textarea
               value={formData.description}
               onChange={(e) => handleInputChange('description', e.target.value)}
               placeholder="Additional details about this recurring transaction..."
               rows={3}
+              className="transition-all duration-200 hover:border-primary/50 focus:border-primary resize-none"
             />
           </div>
 
@@ -1226,14 +1460,15 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
             <Switch
               checked={formData.is_active}
               onCheckedChange={(checked) => handleInputChange('is_active', checked)}
+              className="transition-all duration-200"
             />
-            <Label>Transaction is active</Label>
+            <Label className="cursor-pointer">Transaction is active</Label>
           </div>
 
           <div className="flex gap-3 pt-4">
             <Button
               type="submit"
-              className="flex-1"
+              className="flex-1 transition-all duration-200 hover:scale-[1.02] hover:shadow-md"
               disabled={!formData.name || !formData.type || !formData.category || !formData.amount || !formData.frequency || loading}
             >
               {loading ? (
@@ -1248,7 +1483,13 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
                 </>
               )}
             </Button>
-            <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={onClose} 
+              disabled={loading}
+              className="transition-all duration-200 hover:scale-[1.02] hover:shadow-md"
+            >
               Cancel
             </Button>
           </div>

@@ -1,4 +1,5 @@
 import * as React from "react"
+import { createPortal } from "react-dom"
 import { X } from "lucide-react"
 import { cn } from "../../lib/utils"
 
@@ -9,6 +10,13 @@ interface DialogProps {
 }
 
 export const Dialog: React.FC<DialogProps> = ({ open, onOpenChange, children }) => {
+  const [mounted, setMounted] = React.useState(false)
+
+  React.useEffect(() => {
+    setMounted(true)
+    return () => setMounted(false)
+  }, [])
+
   React.useEffect(() => {
     if (open) {
       document.body.style.overflow = 'hidden'
@@ -34,16 +42,33 @@ export const Dialog: React.FC<DialogProps> = ({ open, onOpenChange, children }) 
     }
   }, [open, onOpenChange])
 
-  if (!open) return null
+  if (!mounted || !open) return null
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+  return createPortal(
+    <div className="fixed inset-0 z-[100]" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
       <div 
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm" 
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm" 
         onClick={() => onOpenChange(false)}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
       />
-      {children}
-    </div>
+      <div 
+        className="absolute inset-0 flex items-center justify-center p-4"
+        style={{ 
+          position: 'absolute', 
+          top: 0, 
+          left: 0, 
+          right: 0, 
+          bottom: 0, 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center',
+          padding: '1rem'
+        }}
+      >
+        {children}
+      </div>
+    </div>,
+    document.body
   )
 }
 
@@ -55,9 +80,18 @@ interface DialogContentProps {
 export const DialogContent = ({ className, children, ...props }: DialogContentProps & React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "relative z-50 grid w-full max-w-lg gap-4 border bg-background p-6 shadow-lg duration-200 sm:rounded-lg",
+      "relative z-10 grid w-full gap-4 border bg-background p-6 shadow-lg duration-200 sm:rounded-lg max-h-[85vh] overflow-y-auto",
       className
     )}
+    style={{
+      position: 'relative',
+      zIndex: 10,
+      maxHeight: '85vh',
+      overflowY: 'auto',
+      backgroundColor: 'white',
+      borderRadius: '0.5rem',
+      boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)'
+    }}
     {...props}
   >
     {children}

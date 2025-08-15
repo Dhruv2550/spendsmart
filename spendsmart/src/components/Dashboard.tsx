@@ -1,6 +1,6 @@
 import { API_BASE_URL } from '../config/api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { TransactionForm } from './TransactionForm';
@@ -30,7 +30,10 @@ import {
   Calendar,
   BarChart3,
   Calculator,
-  PiggyBank
+  PiggyBank,
+  CheckCircle,
+  AlertCircle,
+  Info
 } from 'lucide-react';
 
 interface Transaction {
@@ -56,6 +59,49 @@ interface Widget {
   order: number;
 }
 
+interface Toast {
+  id: number;
+  message: string;
+  type: 'success' | 'error' | 'info';
+}
+
+const ToastContainer = ({ toasts, removeToast }: { 
+  toasts: Toast[]; 
+  removeToast: (id: number) => void;
+}) => (
+  <div className="fixed top-4 right-4 z-50 space-y-2">
+    {toasts.map((toast) => (
+      <div
+        key={toast.id}
+        className={`max-w-md px-4 py-3 rounded-lg shadow-lg border flex items-center justify-between animate-in slide-in-from-right-full duration-300 ${
+          toast.type === 'error' 
+            ? 'bg-red-50 border-red-200 text-red-800' 
+            : toast.type === 'success'
+            ? 'bg-green-50 border-green-200 text-green-800'
+            : 'bg-blue-50 border-blue-200 text-blue-800'
+        }`}
+      >
+        <div className="flex items-center gap-2">
+          {toast.type === 'success' ? (
+            <CheckCircle className="h-4 w-4" />
+          ) : toast.type === 'error' ? (
+            <AlertCircle className="h-4 w-4" />
+          ) : (
+            <Info className="h-4 w-4" />
+          )}
+          <span className="text-sm font-medium">{toast.message}</span>
+        </div>
+        <button
+          onClick={() => removeToast(toast.id)}
+          className="ml-3 text-gray-400 hover:text-gray-600 transition-colors duration-200"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+    ))}
+  </div>
+);
+
 const sizeMap = {
   'small': 'col-span-1 row-span-1',
   'medium': 'col-span-1 row-span-2',
@@ -72,6 +118,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
   const [showExpenseTracker, setShowExpenseTracker] = useState(false);
   const [returnToExpenseTracker, setReturnToExpenseTracker] = useState(false);
   const [showExportImport, setShowExportImport] = useState(false);
+  const [pendingDeletes, setPendingDeletes] = useState<Set<number>>(new Set());
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  
+  const toastIdRef = useRef(0);
   
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
@@ -81,6 +131,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
   const [isCustomizing, setIsCustomizing] = useState(false);
   const [widgets, setWidgets] = useState<Widget[]>([]);
   const [draggedWidget, setDraggedWidget] = useState<string | null>(null);
+
+  const addToast = (message: string, type: Toast['type'] = 'info', duration = 4000) => {
+    const id = ++toastIdRef.current;
+    const newToast: Toast = { id, message, type };
+    
+    setToasts(prev => [...prev, newToast]);
+    
+    setTimeout(() => removeToast(id), duration);
+  };
+
+  const removeToast = (id: number) => {
+    setToasts(prev => prev.filter(toast => toast.id !== id));
+  };
 
   const defaultWidgets: Widget[] = [
     { id: 'income', title: 'Total Income', visible: true, size: 'small', order: 1 },
@@ -109,6 +172,78 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
     }
   }, []);
 
+  const optimisticMonthChange = (newMonth: string) => {
+    const monthName = new Date(newMonth + '-01').toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'long' 
+    });
+    
+    setSelectedMonth(newMonth);
+    addToast(`Switched to ${monthName} view`, 'info', 2000);
+  };
+
+  const optimisticWidgetToggle = (widgetId: string, currentVisibility: boolean) => {
+    toggleWidgetVisibility(widgetId);
+    const widget = widgets.find(w => w.id === widgetId);
+    addToast(
+      `${widget?.title} ${!currentVisibility ? 'shown' : 'hidden'}`, 
+      'info', 
+      2000
+    );
+  };
+
+  const optimisticSaveDashboard = () => {
+    saveDashboardLayout();
+    addToast('Dashboard layout saved successfully', 'success', 3000);
+  };
+
+  const optimisticResetDashboard = () => {
+    if (window.confirm('Reset dashboard to default layout? This will remove your customizations.')) {
+      resetToDefault();
+      addToast('Dashboard reset to default layout', 'info', 3000);
+    }
+  };
+
+  const optimisticDeleteTransaction = async (id: number) => {
+    const transactionToDelete = transactions.find(t => t.id === id);
+    if (!transactionToDelete) return;
+
+    setPendingDeletes(prev => new Set([...prev, id]));
+    addToast(
+      `Deleted ${transactionToDelete.category} transaction ($${transactionToDelete.amount})`, 
+      'success', 
+      4000
+    );
+
+    try {
+      await handleDeleteTransaction(id);
+    } catch (error) {
+      setPendingDeletes(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(id);
+        return newSet;
+      });
+      addToast('Failed to delete transaction', 'error', 4000);
+    }
+  };
+
+  const optimisticEditTransaction = (transaction: Transaction) => {
+    setEditingTransaction(transaction);
+    setShowTransactionForm(true);
+    
+    if (showAllTransactions) {
+      setShowAllTransactions(false);
+      setReturnToAllTransactions(true);
+    }
+    
+    if (showExpenseTracker) {
+      setShowExpenseTracker(false);
+      setReturnToExpenseTracker(true);
+    }
+    
+    addToast(`Editing ${transaction.category} transaction`, 'info', 2000);
+  };
+
   const saveDashboardLayout = () => {
     try {
       localStorage.setItem('spendsmart_dashboard_widgets', JSON.stringify(widgets));
@@ -119,11 +254,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
   };
 
   const resetToDefault = () => {
-    if (window.confirm('Reset dashboard to default layout? This will remove your customizations.')) {
-      setWidgets(defaultWidgets);
-      localStorage.removeItem('spendsmart_dashboard_widgets');
-      setIsCustomizing(false);
-    }
+    setWidgets(defaultWidgets);
+    localStorage.removeItem('spendsmart_dashboard_widgets');
+    setIsCustomizing(false);
   };
 
   const toggleWidgetVisibility = (widgetId: string) => {
@@ -144,6 +277,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
           : widget
       )
     );
+    
+    const widget = widgets.find(w => w.id === widgetId);
+    addToast(`${widget?.title} size changed to ${newSize}`, 'info', 2000);
   };
 
   const handleDragStart = (e: React.DragEvent, widgetId: string) => {
@@ -181,6 +317,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
     });
     
     setDraggedWidget(null);
+    addToast('Widget reordered', 'info', 2000);
   };
 
   const { data: transactions = [], refetch, isLoading, error } = useQuery({
@@ -201,7 +338,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
           timestamp: transaction.id
         }));
         
-        return mappedData;
+        return mappedData.filter((t: Transaction) => !pendingDeletes.has(t.id));
       } catch (error) {
         console.error('Error fetching transactions:', error);
         return [];
@@ -265,18 +402,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
   };
 
   const handleEditTransaction = (transaction: Transaction) => {
-    setEditingTransaction(transaction);
-    setShowTransactionForm(true);
-    
-    if (showAllTransactions) {
-      setShowAllTransactions(false);
-      setReturnToAllTransactions(true);
-    }
-    
-    if (showExpenseTracker) {
-      setShowExpenseTracker(false);
-      setReturnToExpenseTracker(true);
-    }
+    optimisticEditTransaction(transaction);
   };
 
   const handleDeleteTransaction = async (id: number) => {
@@ -287,9 +413,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
       return;
     }
 
-    const optimisticTransactions = transactions.filter(t => t.id !== id);
-    queryClient.setQueryData(['transactions'], optimisticTransactions);
-
     try {
       const response = await fetch(`${API_BASE_URL}/api/records/${id}`, {
         method: 'DELETE',
@@ -299,17 +422,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
         throw new Error(`Delete failed with status: ${response.status}`);
       }
       
-      console.log('Transaction deleted successfully');
+      setPendingDeletes(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(id);
+        return newSet;
+      });
+      
+      refetch();
       
     } catch (error) {
       console.error('Error deleting transaction:', error);
-      queryClient.setQueryData(['transactions'], transactions);
-      alert('Failed to delete transaction. Please try again.');
+      throw error;
     }
   };
 
   const handleDeleteTransactionSync = (id: number) => {
-    handleDeleteTransaction(id);
+    optimisticDeleteTransaction(id);
   };
 
   const handleFormClose = () => {
@@ -345,6 +473,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
 
   const handleImportSuccess = () => {
     refetch();
+    addToast('Data imported successfully', 'success', 3000);
   };
 
   const getExpensesByCategory = () => {
@@ -400,8 +529,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
     children: React.ReactNode;
   }> = ({ widget, children }) => (
     <div
-      className={`relative ${sizeMap[widget.size]} ${
-        isCustomizing ? 'ring-2 ring-blue-200 ring-dashed' : ''
+      className={`relative transition-all duration-300 ${sizeMap[widget.size]} ${
+        isCustomizing ? 'ring-2 ring-blue-200 ring-dashed hover:ring-blue-300' : ''
       }`}
       draggable={isCustomizing}
       onDragStart={(e) => handleDragStart(e, widget.id)}
@@ -413,8 +542,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
           <Button
             size="sm"
             variant="outline"
-            className="h-6 w-6 p-0 bg-white/90"
-            onClick={() => toggleWidgetVisibility(widget.id)}
+            className="h-6 w-6 p-0 bg-white/90 transition-all duration-200 hover:bg-white"
+            onClick={() => optimisticWidgetToggle(widget.id, widget.visible)}
             title={widget.visible ? 'Hide widget' : 'Show widget'}
           >
             {widget.visible ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
@@ -422,7 +551,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
           <Button
             size="sm"
             variant="outline"
-            className="h-6 w-6 p-0 bg-white/90 cursor-move"
+            className="h-6 w-6 p-0 bg-white/90 cursor-move transition-all duration-200 hover:bg-white"
             title="Drag to reorder"
           >
             <GripVertical className="h-3 w-3" />
@@ -435,7 +564,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
           <select
             value={widget.size}
             onChange={(e) => changeWidgetSize(widget.id, e.target.value as 'small' | 'medium' | 'large')}
-            className="text-xs border rounded px-1 py-0.5 bg-white/90"
+            className="text-xs border rounded px-1 py-0.5 bg-white/90 transition-all duration-200 hover:bg-white"
           >
             <option value="small">Small</option>
             <option value="medium">Tall</option>
@@ -444,7 +573,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
         </div>
       )}
       
-      <div className={`h-full ${!widget.visible ? 'opacity-30' : ''} ${
+      <div className={`h-full transition-all duration-300 ${!widget.visible ? 'opacity-30' : ''} ${
         isCustomizing && !widget.visible ? 'pointer-events-none' : ''
       }`}>
         {children}
@@ -469,7 +598,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
         <Icon className="h-4 w-4 text-muted-foreground" />
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
+        <div className="text-2xl font-bold transition-all duration-300">{value}</div>
         {children}
       </CardContent>
     </Card>
@@ -514,7 +643,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
             <div className="mt-2">
               <div className="w-full bg-gray-200 rounded-full h-2">
                 <div 
-                  className={`h-2 rounded-full transition-all duration-300 ${
+                  className={`h-2 rounded-full transition-all duration-500 ${
                     budgetPercentage > 100 ? 'bg-red-500' : 
                     budgetPercentage > 80 ? 'bg-yellow-500' : 'bg-green-500'
                   }`}
@@ -540,7 +669,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
             <div className="mt-2">
               <div className="w-full bg-gray-200 rounded-full h-2">
                 <div 
-                  className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                  className="bg-blue-500 h-2 rounded-full transition-all duration-500"
                   style={{ width: `${Math.max(0, savingsProgress)}%` }}
                 />
               </div>
@@ -553,7 +682,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
 
       case 'recent-transactions':
         return (
-          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 h-full">
+          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 h-full transition-all duration-300 hover:shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Recent Transactions</CardTitle>
               <div className="flex gap-2">
@@ -568,6 +697,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
                   size="sm"
                   onClick={() => !isCustomizing && setShowAllTransactions(true)}
                   disabled={isCustomizing}
+                  className="transition-all duration-200"
                 >
                   <Eye className="mr-2 h-4 w-4" />
                   View All
@@ -589,7 +719,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
                   recentTransactions.map((transaction: Transaction) => (
                     <div 
                       key={transaction.id}
-                      className="flex items-center justify-between p-2 border rounded-lg hover:bg-gray-50 group h-auto"
+                      className="flex items-center justify-between p-2 border rounded-lg hover:bg-gray-50 group h-auto transition-all duration-200"
                     >
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-sm truncate">{transaction.note}</p>
@@ -600,7 +730,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
                       
                       <div className="flex items-center gap-2">
                         {!isCustomizing && (
-                          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex space-x-1">
+                          <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 flex space-x-1">
                             <Button
                               variant="ghost"
                               size="sm"
@@ -608,7 +738,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
                                 e.stopPropagation();
                                 handleEditTransaction(transaction);
                               }}
-                              className="h-6 w-6 p-0"
+                              className="h-6 w-6 p-0 transition-all duration-200 hover:bg-blue-50"
                             >
                               <Pencil className="h-3 w-3" />
                             </Button>
@@ -617,16 +747,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
                               size="sm"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleDeleteTransaction(transaction.id);
+                                optimisticDeleteTransaction(transaction.id);
                               }}
-                              className="h-6 w-6 p-0"
+                              className="h-6 w-6 p-0 transition-all duration-200 hover:bg-red-50"
                             >
                               <Trash2 className="h-3 w-3" />
                             </Button>
                           </div>
                         )}
                         
-                        <div className={`font-medium text-sm ${
+                        <div className={`font-medium text-sm transition-all duration-300 ${
                           transaction.type === 'income' ? 'text-green-600' : 'text-red-600'
                         }`}>
                           {transaction.type === 'income' ? '+' : '-'}{formatCurrency(transaction.amount)}
@@ -642,7 +772,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
       
       case 'expense-categories':
         return (
-          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 h-full">
+          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 h-full transition-all duration-300 hover:shadow-lg">
             <CardHeader>
               <CardTitle>Top Expense Categories</CardTitle>
             </CardHeader>
@@ -665,7 +795,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2">
                         <div 
-                          className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                          className="bg-blue-500 h-2 rounded-full transition-all duration-500"
                           style={{ width: `${category.percentage}%` }}
                         />
                       </div>
@@ -679,7 +809,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
 
       case 'monthly-trends':
         return (
-          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 h-full">
+          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 h-full transition-all duration-300 hover:shadow-lg">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="h-4 w-4" />
@@ -690,12 +820,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
                   <div>
-                    <div className="text-2xl font-bold">
+                    <div className="text-2xl font-bold transition-all duration-300">
                       {monthlyTrend.isUp ? '+' : ''}{monthlyTrend.trend.toFixed(1)}%
                     </div>
                     <p className="text-sm text-muted-foreground">vs last month</p>
                   </div>
-                  <div className={`p-3 rounded-full ${
+                  <div className={`p-3 rounded-full transition-all duration-300 ${
                     monthlyTrend.isUp ? 'bg-red-100' : 'bg-green-100'
                   }`}>
                     {monthlyTrend.isUp ? (
@@ -717,7 +847,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
                   </div>
                   <div className="flex justify-between text-sm">
                     <span>Difference</span>
-                    <span className={`font-medium ${
+                    <span className={`font-medium transition-all duration-300 ${
                       monthlyTrend.isUp ? 'text-red-500' : 'text-green-500'
                     }`}>
                       {monthlyTrend.isUp ? '+' : ''}{formatCurrency(monthlyTrend.currentMonth - monthlyTrend.previousMonth)}
@@ -728,8 +858,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
                 <div className="w-full bg-gray-100 h-4 rounded-full overflow-hidden mt-2">
                   <div className="relative h-full w-full">
                     <div className="absolute inset-0 flex">
-                      <div className="bg-blue-300 h-full" style={{ width: '50%' }}></div>
-                      <div className={`h-full ${monthlyTrend.isUp ? 'bg-red-400' : 'bg-green-400'}`} 
+                      <div className="bg-blue-300 h-full transition-all duration-500" style={{ width: '50%' }}></div>
+                      <div className={`h-full transition-all duration-500 ${monthlyTrend.isUp ? 'bg-red-400' : 'bg-green-400'}`} 
                         style={{ 
                           width: `${Math.min(Math.abs(monthlyTrend.trend) / 2, 50)}%`, 
                           marginLeft: monthlyTrend.isUp ? '0' : 'auto',
@@ -746,13 +876,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
 
       case 'daily-spending':
         return (
-          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 h-full">
+          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 h-full transition-all duration-300 hover:shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Daily Average</CardTitle>
               <Calculator className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-orange-500">{formatCurrency(dailyAverageSpending)}</div>
+              <div className="text-2xl font-bold text-orange-500 transition-all duration-300">{formatCurrency(dailyAverageSpending)}</div>
               <p className="text-xs text-muted-foreground">Average daily spending</p>
               
               <div className="mt-4 pt-4 border-t border-gray-100">
@@ -773,7 +903,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
 
       case 'savings-forecast':
         return (
-          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 h-full">
+          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 h-full transition-all duration-300 hover:shadow-lg">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <PiggyBank className="h-4 w-4" />
@@ -784,13 +914,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-2xl font-bold">
+                    <div className="text-2xl font-bold transition-all duration-300">
                       {formatCurrency(currentSavings)}
                     </div>
                     <p className="text-sm text-muted-foreground">Current savings</p>
                   </div>
                   <div className="text-right">
-                    <div className="text-2xl font-bold text-blue-500">
+                    <div className="text-2xl font-bold text-blue-500 transition-all duration-300">
                       {formatCurrency(monthlySavings)}
                     </div>
                     <p className="text-sm text-muted-foreground">Monthly goal</p>
@@ -799,7 +929,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
                 
                 <div className="w-full bg-gray-200 rounded-full h-4">
                   <div 
-                    className={`h-4 rounded-full transition-all duration-300 ${
+                    className={`h-4 rounded-full transition-all duration-500 ${
                       currentSavings >= monthlySavings ? 'bg-green-500' :
                       currentSavings >= 0 ? 'bg-blue-500' : 'bg-red-500'
                     }`}
@@ -825,17 +955,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
                 </div>
                 
                 {currentSavings < monthlySavings && currentSavings >= 0 && (
-                  <div className="bg-blue-50 border border-blue-200 rounded p-2 text-sm text-blue-700">
+                  <div className="bg-blue-50 border border-blue-200 rounded p-2 text-sm text-blue-700 transition-all duration-300">
                     <p>You need {formatCurrency(monthlySavings - currentSavings)} more to reach your goal.</p>
                   </div>
                 )}
                 {currentSavings < 0 && (
-                  <div className="bg-red-50 border border-red-200 rounded p-2 text-sm text-red-700">
+                  <div className="bg-red-50 border border-red-200 rounded p-2 text-sm text-red-700 transition-all duration-300">
                     <p>You're spending more than you earn this month.</p>
                   </div>
                 )}
                 {currentSavings >= monthlySavings && (
-                  <div className="bg-green-50 border border-green-200 rounded p-2 text-sm text-green-700">
+                  <div className="bg-green-50 border border-green-200 rounded p-2 text-sm text-green-700 transition-all duration-300">
                     <p>Congratulations! You've reached your monthly savings goal!</p>
                   </div>
                 )}
@@ -846,7 +976,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
 
       case 'budget-calendar':
         return (
-          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 h-full">
+          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 h-full transition-all duration-300 hover:shadow-lg">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Calendar className="h-4 w-4" />
@@ -911,7 +1041,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
                       calendarDays.push(
                         <div 
                           key={day} 
-                          className={`p-1 rounded flex flex-col ${
+                          className={`p-1 rounded flex flex-col transition-all duration-200 ${
                             isToday ? 'bg-blue-50 ring-1 ring-blue-200' : 'hover:bg-gray-50'
                           }`}
                         >
@@ -974,7 +1104,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
               <Button 
                 variant="outline" 
                 onClick={() => refetch()}
-                className="mt-4"
+                className="mt-4 transition-all duration-200"
               >
                 <RotateCcw className="h-4 w-4 mr-2" />
                 Retry
@@ -987,236 +1117,246 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
-      <div className="container mx-auto px-4 py-8">
-        <div className="mb-8">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-3xl font-bold text-primary mb-2">
-                Dashboard
-              </h1>
-              <p className="text-muted-foreground">
-                {isCustomizing ? 'Customizing your dashboard - drag widgets to reorder' : 'Overview of your financial activity'}
-              </p>
-            </div>
-            
-            <div className="flex gap-2">
-              {isCustomizing ? (
-                <>
+    <>
+      <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
+        <div className="container mx-auto px-4 py-8">
+          <div className="mb-8">
+            <div className="flex justify-between items-center">
+              <div>
+                <h1 className="text-3xl font-bold text-primary mb-2">
+                  Dashboard
+                </h1>
+                <p className="text-muted-foreground">
+                  {isCustomizing ? 'Customizing your dashboard - drag widgets to reorder' : 'Overview of your financial activity'}
+                </p>
+              </div>
+              
+              <div className="flex gap-2">
+                {isCustomizing ? (
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={optimisticResetDashboard}
+                      className="flex items-center gap-2 transition-all duration-200"
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                      Reset
+                    </Button>
+                    <Button
+                      onClick={optimisticSaveDashboard}
+                      className="flex items-center gap-2 transition-all duration-200"
+                    >
+                      <Save className="h-4 w-4" />
+                      Save & Done
+                    </Button>
+                  </>
+                ) : (
                   <Button
                     variant="outline"
-                    onClick={resetToDefault}
-                    className="flex items-center gap-2"
+                    onClick={() => setIsCustomizing(true)}
+                    className="flex items-center gap-2 transition-all duration-200"
                   >
-                    <RotateCcw className="h-4 w-4" />
-                    Reset
+                    <Settings className="h-4 w-4" />
+                    Customize
                   </Button>
-                  <Button
-                    onClick={saveDashboardLayout}
-                    className="flex items-center gap-2"
-                  >
-                    <Save className="h-4 w-4" />
-                    Save & Done
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  variant="outline"
-                  onClick={() => setIsCustomizing(true)}
-                  className="flex items-center gap-2"
-                >
-                  <Settings className="h-4 w-4" />
-                  Customize
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {isCustomizing && (
-          <Card className="border-blue-200 bg-blue-50 mb-6">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <Settings className="h-5 w-5 text-blue-600" />
-                <div>
-                  <h3 className="font-medium text-blue-800">Dashboard Customization Mode</h3>
-                  <p className="text-sm text-blue-700">
-                    - Drag widgets to reorder - Use eye icon to show/hide - Change size with dropdown - Save when done
-                  </p>
-                </div>
+                )}
               </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {!isCustomizing && (
-          <SpendingAlertsNotification 
-            month={selectedMonth} 
-            onAlertAction={() => {
-              refetch();
-            }}
-          />
-        )}
-
-        {!isCustomizing && (
-          <div className="flex justify-between items-center mb-8">
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium">View Month:</label>
-              <select 
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="px-3 py-2 border rounded-lg text-sm min-w-[140px] bg-card"
-              >
-                {getAvailableMonths().map(month => (
-                  <option key={month} value={month}>
-                    {new Date(month + '-01').toLocaleDateString('en-US', { 
-                      year: 'numeric', 
-                      month: 'long' 
-                    })}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex gap-3">
-              <Button 
-                variant="outline" 
-                onClick={() => setShowExportImport(true)}
-              >
-                <Download className="mr-2 h-4 w-4" />
-                Export/Import
-              </Button>
-              <Button 
-                variant="outline" 
-                onClick={() => setShowExpenseTracker(true)}
-              >
-                <Table className="mr-2 h-4 w-4" />
-                Expense Tracker
-              </Button>
-              <Button onClick={() => setShowTransactionForm(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Transaction
-              </Button>
             </div>
           </div>
-        )}
 
-        {isLoading ? (
-          <div className="flex items-center justify-center min-h-[400px]">
-            <div className="text-center">
-              <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full inline-block mb-4"></div>
-              <p className="text-muted-foreground">Loading your financial data...</p>
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-              {visibleWidgets.map((widget) => (
-                <CustomizableWidget
-                  key={widget.id}
-                  widget={widget}
-                >
-                  {renderWidget(widget)}
-                </CustomizableWidget>
-              ))}
-            </div>
-
-            {isCustomizing && hiddenWidgets.length > 0 && (
-              <Card className="border-gray-200 bg-gray-50 mb-8">
-                <CardHeader>
-                  <CardTitle className="text-lg">Hidden Widgets</CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    Click the eye icon to show these widgets on your dashboard
-                  </p>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {hiddenWidgets.map((widget) => (
-                      <div key={widget.id} className="flex items-center justify-between p-3 border rounded-lg bg-white">
-                        <div>
-                          <h4 className="font-medium text-sm">{widget.title}</h4>
-                          <p className="text-xs text-muted-foreground">Size: {widget.size}</p>
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => toggleWidgetVisibility(widget.id)}
-                        >
-                          <Eye className="h-3 w-3 mr-1" />
-                          Show
-                        </Button>
-                      </div>
-                    ))}
+          {isCustomizing && (
+            <Card className="border-blue-200 bg-blue-50 mb-6 transition-all duration-300">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <Settings className="h-5 w-5 text-blue-600" />
+                  <div>
+                    <h3 className="font-medium text-blue-800">Dashboard Customization Mode</h3>
+                    <p className="text-sm text-blue-700">
+                      - Drag widgets to reorder - Use eye icon to show/hide - Change size with dropdown - Save when done
+                    </p>
                   </div>
-                </CardContent>
-              </Card>
-            )}
-          </>
-        )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
-        {showTransactionForm && (
-          <TransactionForm
-            onClose={handleFormClose}
-            onTransactionAdded={handleFormSuccess}
-            editingTransaction={editingTransaction}
-          />
-        )}
+          {!isCustomizing && (
+            <SpendingAlertsNotification 
+              month={selectedMonth} 
+              onAlertAction={() => {
+                refetch();
+              }}
+            />
+          )}
 
-        {showAllTransactions && (
-          <AllTransactions
-            transactions={transactions}
-            onEdit={handleEditTransaction}
-            onDelete={handleDeleteTransactionSync}
-            onClose={() => setShowAllTransactions(false)}
-          />
-        )}
+          {!isCustomizing && (
+            <div className="flex justify-between items-center mb-8">
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium">View Month:</label>
+                <select 
+                  value={selectedMonth}
+                  onChange={(e) => optimisticMonthChange(e.target.value)}
+                  className="px-3 py-2 border rounded-lg text-sm min-w-[140px] bg-card transition-all duration-200 hover:border-primary/50 focus:border-primary focus:ring-1 focus:ring-primary"
+                >
+                  {getAvailableMonths().map(month => (
+                    <option key={month} value={month}>
+                      {new Date(month + '-01').toLocaleDateString('en-US', { 
+                        year: 'numeric', 
+                        month: 'long' 
+                      })}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-        {showExpenseTracker && (
-          <ExpenseTrackerView
-            isOpen={showExpenseTracker}
-            onClose={() => setShowExpenseTracker(false)}
-            transactions={transactions}
-            expenseLimit={expenseLimit}
-            onEdit={(transaction) => {
-              setShowExpenseTracker(false);
-              setReturnToExpenseTracker(true);
-              handleEditTransaction(transaction);
-            }}
-            onDelete={handleDeleteTransactionSync}
-            onAddTransaction={() => {
-              setShowExpenseTracker(false);
-              setShowTransactionForm(true);
-              setReturnToExpenseTracker(true);
-            }}
-          />
-        )}
+              <div className="flex gap-3">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setShowExportImport(true)}
+                  className="transition-all duration-200"
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Export/Import
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setShowExpenseTracker(true)}
+                  className="transition-all duration-200"
+                >
+                  <Table className="mr-2 h-4 w-4" />
+                  Expense Tracker
+                </Button>
+                <Button 
+                  onClick={() => setShowTransactionForm(true)}
+                  className="transition-all duration-200"
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Transaction
+                </Button>
+              </div>
+            </div>
+          )}
 
-        {showExportImport && (
-          <ExportImportModal
-            isOpen={showExportImport}
-            onClose={() => setShowExportImport(false)}
-            transactions={transactions}
-            onImportSuccess={handleImportSuccess}
-          />
-        )}
+          {isLoading ? (
+            <div className="flex items-center justify-center min-h-[400px]">
+              <div className="text-center">
+                <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full inline-block mb-4"></div>
+                <p className="text-muted-foreground">Loading your financial data...</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                {visibleWidgets.map((widget) => (
+                  <CustomizableWidget
+                    key={widget.id}
+                    widget={widget}
+                  >
+                    {renderWidget(widget)}
+                  </CustomizableWidget>
+                ))}
+              </div>
 
-        {selectedPanel && !isCustomizing && (
-          <PanelDetailsModal
-            isOpen={!!selectedPanel}
-            onClose={() => setSelectedPanel(null)}
-            panelType={selectedPanel}
-            transactions={transactions.filter((t: Transaction) => {
-              const transactionMonth = t.date.substring(0, 7);
-              return transactionMonth === selectedMonth;
-            })}
-            totalIncome={totalIncome}
-            totalExpenses={totalExpenses}
-            expenseLimit={expenseLimit}
-            monthlySavings={monthlySavings}
-          />
-        )}
+              {isCustomizing && hiddenWidgets.length > 0 && (
+                <Card className="border-gray-200 bg-gray-50 mb-8 transition-all duration-300">
+                  <CardHeader>
+                    <CardTitle className="text-lg">Hidden Widgets</CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Click the eye icon to show these widgets on your dashboard
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                      {hiddenWidgets.map((widget) => (
+                        <div key={widget.id} className="flex items-center justify-between p-3 border rounded-lg bg-white transition-all duration-200 hover:shadow-sm">
+                          <div>
+                            <h4 className="font-medium text-sm">{widget.title}</h4>
+                            <p className="text-xs text-muted-foreground">Size: {widget.size}</p>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => optimisticWidgetToggle(widget.id, widget.visible)}
+                            className="transition-all duration-200"
+                          >
+                            <Eye className="h-3 w-3 mr-1" />
+                            Show
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          )}
+
+          {showTransactionForm && (
+            <TransactionForm
+              onClose={handleFormClose}
+              onTransactionAdded={handleFormSuccess}
+              editingTransaction={editingTransaction}
+            />
+          )}
+
+          {showAllTransactions && (
+            <AllTransactions
+              transactions={transactions}
+              onEdit={handleEditTransaction}
+              onDelete={handleDeleteTransactionSync}
+              onClose={() => setShowAllTransactions(false)}
+            />
+          )}
+
+          {showExpenseTracker && (
+            <ExpenseTrackerView
+              isOpen={showExpenseTracker}
+              onClose={() => setShowExpenseTracker(false)}
+              transactions={transactions}
+              expenseLimit={expenseLimit}
+              onEdit={(transaction) => {
+                setShowExpenseTracker(false);
+                setReturnToExpenseTracker(true);
+                handleEditTransaction(transaction);
+              }}
+              onDelete={handleDeleteTransactionSync}
+              onAddTransaction={() => {
+                setShowExpenseTracker(false);
+                setShowTransactionForm(true);
+                setReturnToExpenseTracker(true);
+              }}
+            />
+          )}
+
+          {showExportImport && (
+            <ExportImportModal
+              isOpen={showExportImport}
+              onClose={() => setShowExportImport(false)}
+              transactions={transactions}
+              onImportSuccess={handleImportSuccess}
+            />
+          )}
+
+          {selectedPanel && !isCustomizing && (
+            <PanelDetailsModal
+              isOpen={!!selectedPanel}
+              onClose={() => setSelectedPanel(null)}
+              panelType={selectedPanel}
+              transactions={transactions.filter((t: Transaction) => {
+                const transactionMonth = t.date.substring(0, 7);
+                return transactionMonth === selectedMonth;
+              })}
+              totalIncome={totalIncome}
+              totalExpenses={totalExpenses}
+              expenseLimit={expenseLimit}
+              monthlySavings={monthlySavings}
+            />
+          )}
+        </div>
       </div>
-    </div>
+      
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
+    </>
   );
 };
 
