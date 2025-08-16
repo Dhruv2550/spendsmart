@@ -58,7 +58,7 @@ const RecurringTransactionsPage: React.FC = () => {
   const [recurringTransactions, setRecurringTransactions] = useState<RecurringTransaction[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<RecurringTransaction | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [backgroundLoading, setBackgroundLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [selectedView, setSelectedView] = useState<'all' | 'bills' | 'income'>('all');
   const [activeTab, setActiveTab] = useState('all');
@@ -73,8 +73,10 @@ const RecurringTransactionsPage: React.FC = () => {
     income: ["Salary", "Freelance", "Investment", "Bonus", "Gift", "Other"]
   };
 
-  // Load recurring transactions
+  // Load recurring transactions with background loading
   const loadRecurringTransactions = async () => {
+    setBackgroundLoading(true);
+    
     try {
       const response = await fetch(`${API_BASE_URL}/api/recurring`);
       if (!response.ok) throw new Error('Failed to load recurring transactions');
@@ -83,7 +85,7 @@ const RecurringTransactionsPage: React.FC = () => {
     } catch (error) {
       console.error('Error loading recurring transactions:', error);
     } finally {
-      setLoading(false);
+      setBackgroundLoading(false);
     }
   };
 
@@ -372,112 +374,6 @@ const RecurringTransactionsPage: React.FC = () => {
     return days > 0 && days <= 7;
   });
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
-        <div className="container mx-auto px-4 py-8">
-          {/* Header Skeleton */}
-          <div className="mb-8">
-            <div className="h-8 bg-gray-200 rounded w-48 mb-2 animate-pulse"></div>
-            <div className="h-4 bg-gray-200 rounded w-64 animate-pulse"></div>
-          </div>
-
-          {/* Action Bar Skeleton */}
-          <div className="flex justify-between items-center mb-8">
-            <div className="flex gap-4">
-              <div className="h-10 bg-gray-200 rounded w-48 animate-pulse"></div>
-              <div className="h-10 bg-gray-200 rounded w-36 animate-pulse"></div>
-            </div>
-            <div className="flex gap-4">
-              <div className="h-8 bg-gray-200 rounded w-32 animate-pulse"></div>
-              <div className="h-8 bg-gray-200 rounded w-28 animate-pulse"></div>
-            </div>
-          </div>
-
-          {/* Overview Cards Skeleton */}
-          <div className="grid gap-6 md:grid-cols-4 mb-8">
-            {[1, 2, 3, 4].map((i) => (
-              <Card key={i} className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <div className="h-4 bg-gray-200 rounded w-20 animate-pulse"></div>
-                  <div className="h-4 w-4 bg-gray-200 rounded animate-pulse"></div>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-8 bg-gray-200 rounded w-16 mb-1 animate-pulse"></div>
-                  <div className="h-3 bg-gray-200 rounded w-24 animate-pulse"></div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
-          {/* Upcoming Bills Skeleton */}
-          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 mb-8">
-            <CardHeader>
-              <div className="h-6 bg-gray-200 rounded w-48 animate-pulse"></div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="p-4 rounded-lg border border-gray-200 bg-gray-50">
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-3">
-                        <div className="h-5 w-5 bg-gray-200 rounded animate-pulse"></div>
-                        <div>
-                          <div className="h-5 bg-gray-200 rounded w-32 mb-1 animate-pulse"></div>
-                          <div className="h-3 bg-gray-200 rounded w-48 animate-pulse"></div>
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <div className="h-8 bg-gray-200 rounded w-24 animate-pulse"></div>
-                        <div className="h-8 bg-gray-200 rounded w-16 animate-pulse"></div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Tabs Skeleton */}
-          <div className="space-y-6">
-            <div className="h-10 bg-gray-200 rounded w-full animate-pulse"></div>
-            
-            {/* Transaction Cards Skeleton */}
-            <div className="space-y-4">
-              {[1, 2, 3].map((i) => (
-                <Card key={i} className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
-                  <CardContent className="p-6">
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="flex items-center gap-3 flex-1">
-                        <div className="h-3 w-3 bg-gray-200 rounded-full animate-pulse"></div>
-                        <div className="h-6 bg-gray-200 rounded w-32 animate-pulse"></div>
-                        <div className="h-5 bg-gray-200 rounded w-16 animate-pulse"></div>
-                      </div>
-                      <div className="flex gap-2">
-                        <div className="h-8 w-8 bg-gray-200 rounded animate-pulse"></div>
-                        <div className="h-8 w-8 bg-gray-200 rounded animate-pulse"></div>
-                        <div className="h-8 w-8 bg-gray-200 rounded animate-pulse"></div>
-                        <div className="h-8 w-8 bg-gray-200 rounded animate-pulse"></div>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-4 gap-4">
-                      {[1, 2, 3, 4].map((j) => (
-                        <div key={j}>
-                          <div className="h-3 bg-gray-200 rounded w-16 mb-1 animate-pulse"></div>
-                          <div className="h-4 bg-gray-200 rounded w-20 animate-pulse"></div>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
       <div className="container mx-auto px-4 py-8">
@@ -534,6 +430,16 @@ const RecurringTransactionsPage: React.FC = () => {
                 </>
               )}
             </Button>
+            {backgroundLoading && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <div className="flex space-x-1">
+                  <div className="w-1 h-1 bg-primary rounded-full animate-pulse"></div>
+                  <div className="w-1 h-1 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.1s' }}></div>
+                  <div className="w-1 h-1 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                </div>
+                <span>Updating...</span>
+              </div>
+            )}
           </div>
           
           <div className="flex items-center gap-4">

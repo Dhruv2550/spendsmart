@@ -71,7 +71,6 @@ const EnvelopeBudgetingPage: React.FC = () => {
   const [templates, setTemplates] = useState<BudgetTemplate[]>([]);
   const [analysis, setAnalysis] = useState<BudgetAnalysis[]>([]);
   const [summary, setSummary] = useState<BudgetSummary | null>(null);
-  const [loading, setLoading] = useState(true);
   const [backgroundLoading, setBackgroundLoading] = useState(false);
   const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(new Set());
   
@@ -165,11 +164,7 @@ const EnvelopeBudgetingPage: React.FC = () => {
   }, [selectedTemplate]);
 
   const loadData = async () => {
-    if (budgets.length === 0) {
-      setLoading(true);
-    } else {
-      setBackgroundLoading(true);
-    }
+    setBackgroundLoading(true);
     
     try {
       const templatesResponse = await fetch(`${API_BASE_URL}/api/budget-templates`);
@@ -206,7 +201,6 @@ const EnvelopeBudgetingPage: React.FC = () => {
     } catch (error) {
       console.error('Error loading budget data:', error);
     } finally {
-      setLoading(false);
       setBackgroundLoading(false);
     }
   };
@@ -444,109 +438,6 @@ const EnvelopeBudgetingPage: React.FC = () => {
       </Dialog>
     );
   };
-
-  // Dynamic skeleton loading instead of static spinner
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
-        <div className="container mx-auto px-4 py-8">
-          {/* Header Skeleton */}
-          <div className="mb-8">
-            <div className="h-8 bg-gray-200 rounded w-48 mb-2 animate-pulse"></div>
-            <div className="h-4 bg-gray-200 rounded w-64 animate-pulse"></div>
-          </div>
-
-          {/* Controls Skeleton */}
-          <div className="flex justify-between items-center mb-8">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <div className="h-4 bg-gray-200 rounded w-16 animate-pulse"></div>
-                <div className="h-10 bg-gray-200 rounded w-36 animate-pulse"></div>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="h-4 bg-gray-200 rounded w-12 animate-pulse"></div>
-                <div className="h-10 bg-gray-200 rounded w-36 animate-pulse"></div>
-              </div>
-            </div>
-            <div className="h-10 bg-gray-200 rounded w-32 animate-pulse"></div>
-          </div>
-
-          {/* Summary Cards Skeleton */}
-          <div className="grid gap-6 md:grid-cols-4 mb-8">
-            {[1, 2, 3, 4].map((i) => (
-              <Card key={i} className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <div className="h-4 bg-gray-200 rounded w-20 animate-pulse"></div>
-                  <div className="h-4 w-4 bg-gray-200 rounded animate-pulse"></div>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-8 bg-gray-200 rounded w-16 mb-1 animate-pulse"></div>
-                  <div className="h-3 bg-gray-200 rounded w-24 animate-pulse"></div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
-          {/* Budget Analysis Skeleton */}
-          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 mb-8">
-            <CardHeader>
-              <div className="h-6 bg-gray-200 rounded w-48 mb-2 animate-pulse"></div>
-              <div className="h-4 bg-gray-200 rounded w-64 animate-pulse"></div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <div key={i} className="space-y-3 p-3 rounded-lg border border-gray-200">
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-3">
-                        <div className="h-5 bg-gray-200 rounded w-20 animate-pulse"></div>
-                        <div className="h-4 bg-gray-200 rounded w-16 animate-pulse"></div>
-                      </div>
-                      <div className="text-right">
-                        <div className="h-4 bg-gray-200 rounded w-24 mb-1 animate-pulse"></div>
-                        <div className="h-3 bg-gray-200 rounded w-20 animate-pulse"></div>
-                      </div>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-3 animate-pulse"></div>
-                    <div className="flex justify-between">
-                      <div className="h-3 bg-gray-200 rounded w-16 animate-pulse"></div>
-                      <div className="h-3 bg-gray-200 rounded w-20 animate-pulse"></div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Templates Skeleton */}
-          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
-            <CardHeader>
-              <div className="h-6 bg-gray-200 rounded w-32 animate-pulse"></div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="flex justify-between items-center p-4 border rounded-lg">
-                    <div>
-                      <div className="h-5 bg-gray-200 rounded w-32 mb-1 animate-pulse"></div>
-                      <div className="h-4 bg-gray-200 rounded w-48 mb-1 animate-pulse"></div>
-                      <div className="h-3 bg-gray-200 rounded w-36 animate-pulse"></div>
-                    </div>
-                    <div className="flex gap-2">
-                      <div className="h-8 bg-gray-200 rounded w-16 animate-pulse"></div>
-                      <div className="h-8 w-8 bg-gray-200 rounded animate-pulse"></div>
-                      <div className="h-8 w-8 bg-gray-200 rounded animate-pulse"></div>
-                      <div className="h-8 w-8 bg-gray-200 rounded animate-pulse"></div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
