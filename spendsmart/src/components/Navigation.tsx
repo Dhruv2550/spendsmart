@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { Button } from "./ui/button";
-import { Home, BarChart3, Settings, Menu, X, TrendingUp, Repeat, Package, CheckCircle, AlertCircle, Info, Loader2 } from "lucide-react";
+import { Home, BarChart3, Settings, Menu, X, TrendingUp, Repeat, Package, CheckCircle, AlertCircle, Info, Loader2, LogOut, User } from "lucide-react";
 import { cn } from "../lib/utils";
+import { useAuth } from "../contexts/AuthContext";
 
 // Toast notification system
 interface ToastNotification {
@@ -61,10 +62,12 @@ interface NavigationProps {
 }
 
 const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
+  const { user, logout } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastNotification[]>([]);
   const [isNavigating, setIsNavigating] = useState(false);
   const [pendingPage, setPendingPage] = useState<string | null>(null);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const addToast = (toast: Omit<ToastNotification, 'id'>) => {
     const id = Math.random().toString(36).substr(2, 9);
@@ -83,6 +86,42 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
     { id: "budgeting", label: "Budgeting", icon: Package },
     { id: "settings", label: "Settings", icon: Settings }
   ];
+
+  // Optimistic logout functionality
+  const handleLogout = async () => {
+    if (isLoggingOut) return;
+
+    setIsLoggingOut(true);
+    setIsOpen(false); // Close mobile menu immediately
+
+    // Show optimistic feedback
+    addToast({
+      type: 'info',
+      message: 'Logging out...',
+      duration: 2000
+    });
+
+    try {
+      await logout();
+      
+      // Success feedback (though user will be redirected soon)
+      addToast({
+        type: 'success',
+        message: 'Successfully logged out',
+        duration: 1500
+      });
+    } catch (error) {
+      // Error handling
+      console.error('Logout error:', error);
+      addToast({
+        type: 'error',
+        message: 'Failed to logout. Please try again.',
+        duration: 4000
+      });
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   // Optimistic page navigation
   const handlePageChange = async (pageId: string) => {
@@ -147,6 +186,15 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
     return { isActive, isPending, isDisabled };
   };
 
+  // Get user display name
+  const getUserDisplayName = () => {
+    if (!user) return 'User';
+    if (user.firstName && user.lastName) {
+      return `${user.firstName} ${user.lastName}`;
+    }
+    return user.email || 'User';
+  };
+
   return (
     <>
       {/* Toast notifications */}
@@ -183,6 +231,25 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
           <p className="text-sm text-muted-foreground mt-1 transition-colors duration-200">
             Financial Dashboard
           </p>
+        </div>
+
+        {/* User Profile Section */}
+        <div className="px-4 mb-4">
+          <div className="bg-secondary/30 rounded-lg p-3 transition-all duration-200 hover:bg-secondary/50">
+            <div className="flex items-center gap-3">
+              <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                <User className="h-4 w-4 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">
+                  {getUserDisplayName()}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Account Active
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
 
         <nav className="px-4 space-y-2">
@@ -233,9 +300,37 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
           })}
         </nav>
 
+        {/* Logout Button */}
+        <div className="absolute bottom-20 left-4 right-4">
+          <Button
+            variant="outline"
+            onClick={handleLogout}
+            disabled={isLoggingOut}
+            className={cn(
+              "w-full justify-start gap-3 h-11 transition-all duration-200",
+              "border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800 hover:border-red-300",
+              "dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/50 dark:hover:text-red-300",
+              !isLoggingOut && "hover:scale-[1.02] active:scale-[0.98]",
+              isLoggingOut && "opacity-80 cursor-wait"
+            )}
+          >
+            {isLoggingOut ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <LogOut className="h-4 w-4" />
+            )}
+            <span className={cn(
+              "transition-all duration-200",
+              isLoggingOut && "opacity-80"
+            )}>
+              {isLoggingOut ? 'Logging out...' : 'Logout'}
+            </span>
+          </Button>
+        </div>
+
         {/* Navigation Status Indicator */}
         {isNavigating && (
-          <div className="absolute bottom-4 left-4 right-4">
+          <div className="absolute bottom-32 left-4 right-4">
             <div className="bg-primary/10 border border-primary/20 rounded-lg p-3 transition-all duration-300">
               <div className="flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin text-primary" />
