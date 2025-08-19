@@ -1,11 +1,10 @@
-// src/components/PanelDetailsModal.tsx
 import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { X, TrendingUp, TrendingDown, AlertTriangle, Target, CheckCircle, Info, AlertCircle, Loader2, BarChart3, PieChart, Calculator, Download } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
-// Toast notification system
 interface ToastNotification {
   id: string;
   type: 'success' | 'error' | 'info';
@@ -88,8 +87,9 @@ export const PanelDetailsModal: React.FC<PanelDetailsModalProps> = ({
   expenseLimit,
   monthlySavings
 }) => {
+  const { userId, isAuthenticated, isLoading } = useAuth();
   const [toasts, setToasts] = useState<ToastNotification[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isContentLoading, setIsContentLoading] = useState(false);
   const [activeSection, setActiveSection] = useState<string>('overview');
   const [isExporting, setIsExporting] = useState(false);
 
@@ -102,10 +102,9 @@ export const PanelDetailsModal: React.FC<PanelDetailsModalProps> = ({
     setToasts(prev => prev.filter(toast => toast.id !== id));
   };
 
-  // Simulate loading when modal opens
   useEffect(() => {
-    if (isOpen && panelType) {
-      setIsLoading(true);
+    if (isOpen && panelType && isAuthenticated && userId) {
+      setIsContentLoading(true);
       setActiveSection('overview');
       
       const panelTitle = getPanelTitle();
@@ -115,16 +114,14 @@ export const PanelDetailsModal: React.FC<PanelDetailsModalProps> = ({
         duration: 2000
       });
 
-      // Simulate data loading
       const timer = setTimeout(() => {
-        setIsLoading(false);
+        setIsContentLoading(false);
       }, 800);
 
       return () => clearTimeout(timer);
     }
-  }, [isOpen, panelType]);
+  }, [isOpen, panelType, isAuthenticated, userId]);
 
-  // Optimistic close handler
   const handleClose = () => {
     addToast({
       type: 'info',
@@ -134,9 +131,8 @@ export const PanelDetailsModal: React.FC<PanelDetailsModalProps> = ({
     onClose();
   };
 
-  // Optimistic export handler
   const handleExport = async () => {
-    if (isExporting) return;
+    if (isExporting || !isAuthenticated || !userId) return;
     
     setIsExporting(true);
     const panelTitle = getPanelTitle();
@@ -148,7 +144,6 @@ export const PanelDetailsModal: React.FC<PanelDetailsModalProps> = ({
     });
 
     try {
-      // Simulate export process
       await new Promise(resolve => setTimeout(resolve, 1500));
       
       addToast({
@@ -165,7 +160,6 @@ export const PanelDetailsModal: React.FC<PanelDetailsModalProps> = ({
     }
   };
 
-  // Section navigation with optimistic updates
   const handleSectionChange = (section: string) => {
     if (section === activeSection) return;
     
@@ -178,6 +172,44 @@ export const PanelDetailsModal: React.FC<PanelDetailsModalProps> = ({
   };
 
   if (!panelType) return null;
+
+  if (isLoading) {
+    return (
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto transition-all duration-300">
+          <div className="flex items-center justify-center py-12">
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-6 w-6 animate-spin" />
+              <span>Loading...</span>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  if (!isAuthenticated || !userId) {
+    return (
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="max-w-md transition-all duration-300">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-orange-500" />
+              Authentication Required
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-muted-foreground">
+              Please log in to view detailed financial information.
+            </p>
+            <Button onClick={onClose} className="w-full">
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   const formatCurrency = (amount: number) => `$${amount.toLocaleString()}`;
   const formatDate = (dateString: string) => new Date(dateString).toLocaleDateString();
@@ -521,7 +553,7 @@ export const PanelDetailsModal: React.FC<PanelDetailsModalProps> = ({
   };
 
   const renderContent = () => {
-    if (isLoading) {
+    if (isContentLoading) {
       return (
         <div className="flex flex-col items-center justify-center py-12 space-y-4">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -546,7 +578,6 @@ export const PanelDetailsModal: React.FC<PanelDetailsModalProps> = ({
 
   return (
     <>
-      {/* Toast notifications */}
       {toasts.map(toast => (
         <Toast key={toast.id} notification={toast} onRemove={removeToast} />
       ))}

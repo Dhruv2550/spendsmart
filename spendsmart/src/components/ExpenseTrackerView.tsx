@@ -3,7 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { X, Edit2, Trash2, Plus, Settings, Eye, EyeOff, CheckCircle, AlertCircle, Info } from 'lucide-react';
+import { X, Edit2, Trash2, Plus, Settings, Eye, EyeOff, CheckCircle, AlertCircle, Info, Loader2 } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Transaction {
   id: number;
@@ -77,6 +78,8 @@ export const ExpenseTrackerView: React.FC<ExpenseTrackerViewProps> = ({
   onAddTransaction,
   expenseLimit
 }) => {
+  const { userId, isAuthenticated, isLoading } = useAuth();
+  
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -140,6 +143,11 @@ export const ExpenseTrackerView: React.FC<ExpenseTrackerViewProps> = ({
   };
 
   const optimisticDeleteTransaction = (id: number, transaction: Transaction) => {
+    if (!isAuthenticated || !userId) {
+      addToast('Please log in to delete transactions', 'error');
+      return;
+    }
+
     setPendingDeletes(prev => new Set([...prev, id]));
     addToast(
       `Deleted ${transaction.category} expense ($${transaction.amount})`, 
@@ -158,11 +166,21 @@ export const ExpenseTrackerView: React.FC<ExpenseTrackerViewProps> = ({
   };
 
   const optimisticEditTransaction = (transaction: Transaction) => {
+    if (!isAuthenticated || !userId) {
+      addToast('Please log in to edit transactions', 'error');
+      return;
+    }
+
     onEdit(transaction);
     addToast(`Editing ${transaction.category} expense`, 'info', 2000);
   };
 
   const optimisticAddTransaction = () => {
+    if (!isAuthenticated || !userId) {
+      addToast('Please log in to add transactions', 'error');
+      return;
+    }
+
     onAddTransaction();
     addToast('Opening transaction form', 'info', 2000);
   };
@@ -204,6 +222,44 @@ export const ExpenseTrackerView: React.FC<ExpenseTrackerViewProps> = ({
 
     return { categorizedExpenses, categoryTotals };
   }, [transactions, selectedMonth, pendingDeletes]);
+
+  if (isLoading) {
+    return (
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="max-w-md">
+          <div className="flex items-center justify-center py-8">
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-6 w-6 animate-spin" />
+              <span>Loading expense tracker...</span>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  if (!isAuthenticated || !userId) {
+    return (
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-orange-500" />
+              Authentication Required
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-muted-foreground">
+              Please log in to view your expense tracker.
+            </p>
+            <Button onClick={onClose} className="w-full">
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   const formatCurrency = (amount: number) => `$${amount.toFixed(2)}`;
   const formatDate = (dateString: string) => {
@@ -265,7 +321,7 @@ export const ExpenseTrackerView: React.FC<ExpenseTrackerViewProps> = ({
                   <div className="font-medium text-right self-center ml-2 mr-1">
                     {formatCurrency(transaction.amount)}
                   </div>
-                  {!isDeleting && (
+                  {!isDeleting && isAuthenticated && userId && (
                     <div className="opacity-0 group-hover:opacity-100 flex ml-1 transition-all duration-200">
                       <Button
                         variant="ghost"
@@ -322,6 +378,7 @@ export const ExpenseTrackerView: React.FC<ExpenseTrackerViewProps> = ({
                   value={selectedMonth}
                   onChange={(e) => optimisticMonthChange(e.target.value)}
                   className="px-3 py-1 border rounded text-sm transition-all duration-200 hover:border-primary/50 focus:border-primary focus:ring-1 focus:ring-primary"
+                  disabled={!isAuthenticated || !userId}
                 >
                   {getAvailableMonths().map(month => (
                     <option key={month} value={month}>
@@ -336,7 +393,8 @@ export const ExpenseTrackerView: React.FC<ExpenseTrackerViewProps> = ({
                 <Button 
                   size="sm" 
                   onClick={optimisticAddTransaction}
-                  className="transition-all duration-200"
+                  disabled={!isAuthenticated || !userId}
+                  className="transition-all duration-200 disabled:opacity-50"
                 >
                   <Plus className="h-4 w-4 mr-1" />
                   Add Expense
@@ -347,13 +405,14 @@ export const ExpenseTrackerView: React.FC<ExpenseTrackerViewProps> = ({
                     size="sm" 
                     variant="outline" 
                     onClick={() => setShowColumnSelector(!showColumnSelector)}
-                    className="transition-all duration-200 hover:bg-primary/10"
+                    disabled={!isAuthenticated || !userId}
+                    className="transition-all duration-200 hover:bg-primary/10 disabled:opacity-50"
                   >
                     <Settings className="h-4 w-4 mr-1" />
                     Columns
                   </Button>
                   
-                  {showColumnSelector && (
+                  {showColumnSelector && isAuthenticated && userId && (
                     <div className="absolute right-0 top-full mt-1 bg-white border rounded-lg shadow-lg p-3 z-50 min-w-[200px] animate-in fade-in-0 slide-in-from-top-2 duration-200">
                       <div className="text-sm font-medium mb-2">Show/Hide Columns</div>
                       <div className="space-y-2">

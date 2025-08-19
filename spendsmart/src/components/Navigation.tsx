@@ -4,7 +4,6 @@ import { Home, BarChart3, Settings, Menu, X, TrendingUp, Repeat, Package, CheckC
 import { cn } from "../lib/utils";
 import { useAuth } from "../contexts/AuthContext";
 
-// Toast notification system
 interface ToastNotification {
   id: string;
   type: 'success' | 'error' | 'info';
@@ -62,7 +61,7 @@ interface NavigationProps {
 }
 
 const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
-  const { user, logout } = useAuth();
+  const { user, logout, userId } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastNotification[]>([]);
   const [isNavigating, setIsNavigating] = useState(false);
@@ -87,14 +86,12 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
     { id: "settings", label: "Settings", icon: Settings }
   ];
 
-  // Optimistic logout functionality
   const handleLogout = async () => {
     if (isLoggingOut) return;
 
     setIsLoggingOut(true);
-    setIsOpen(false); // Close mobile menu immediately
+    setIsOpen(false);
 
-    // Show optimistic feedback
     addToast({
       type: 'info',
       message: 'Logging out...',
@@ -104,14 +101,12 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
     try {
       await logout();
       
-      // Success feedback (though user will be redirected soon)
       addToast({
         type: 'success',
         message: 'Successfully logged out',
         duration: 1500
       });
     } catch (error) {
-      // Error handling
       console.error('Logout error:', error);
       addToast({
         type: 'error',
@@ -123,26 +118,21 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
     }
   };
 
-  // Optimistic page navigation
   const handlePageChange = async (pageId: string) => {
     if (pageId === currentPage || isNavigating) return;
 
-    // Immediate UI updates
     setIsNavigating(true);
     setPendingPage(pageId);
-    setIsOpen(false); // Close mobile menu immediately
+    setIsOpen(false);
 
     const pageLabel = navigation.find(item => item.id === pageId)?.label || pageId;
 
     try {
-      // Optimistic navigation - update immediately
       onPageChange(pageId);
       
-      // Simulate background loading/preparation
       await new Promise(resolve => setTimeout(resolve, 300));
 
     } catch (error) {
-      // Error handling with rollback option
       console.error('Navigation error:', error);
       addToast({
         type: 'error',
@@ -154,12 +144,10 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
     }
   };
 
-  // Optimistic mobile menu toggle
   const handleMenuToggle = () => {
     const newState = !isOpen;
     setIsOpen(newState);
     
-    // Provide subtle feedback for menu state changes
     addToast({
       type: 'info',
       message: newState ? 'Menu opened' : 'Menu closed',
@@ -167,7 +155,6 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
     });
   };
 
-  // Handle overlay click with feedback
   const handleOverlayClick = () => {
     setIsOpen(false);
     addToast({
@@ -177,7 +164,6 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
     });
   };
 
-  // Get navigation item display state
   const getNavigationItemState = (itemId: string) => {
     const isActive = currentPage === itemId;
     const isPending = pendingPage === itemId && isNavigating;
@@ -186,7 +172,6 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
     return { isActive, isPending, isDisabled };
   };
 
-  // Get user display name
   const getUserDisplayName = () => {
     if (!user) return 'User';
     if (user.firstName && user.lastName) {
@@ -197,12 +182,10 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
 
   return (
     <>
-      {/* Toast notifications */}
       {toasts.map(toast => (
         <Toast key={toast.id} notification={toast} onRemove={removeToast} />
       ))}
 
-      {/* Mobile Menu Button */}
       <div className="lg:hidden fixed top-4 right-4 z-50">
         <Button
           variant="outline"
@@ -218,7 +201,6 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
         </Button>
       </div>
 
-      {/* Sidebar */}
       <div className={cn(
         "fixed left-0 top-0 h-full w-64 bg-card border-r shadow-lg transform transition-all duration-300 z-40",
         "lg:translate-x-0",
@@ -233,7 +215,6 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
           </p>
         </div>
 
-        {/* User Profile Section */}
         <div className="px-4 mb-4">
           <div className="bg-secondary/30 rounded-lg p-3 transition-all duration-200 hover:bg-secondary/50">
             <div className="flex items-center gap-3">
@@ -245,7 +226,7 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
                   {getUserDisplayName()}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Account Active
+                  {userId ? `ID: ${userId.substring(0, 8)}...` : 'Account Active'}
                 </p>
               </div>
             </div>
@@ -300,7 +281,6 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
           })}
         </nav>
 
-        {/* Logout Button */}
         <div className="absolute bottom-20 left-4 right-4">
           <Button
             variant="outline"
@@ -328,7 +308,6 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
           </Button>
         </div>
 
-        {/* Navigation Status Indicator */}
         {isNavigating && (
           <div className="absolute bottom-32 left-4 right-4">
             <div className="bg-primary/10 border border-primary/20 rounded-lg p-3 transition-all duration-300">
@@ -342,7 +321,6 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
           </div>
         )}
 
-        {/* Footer */}
         <div className="absolute bottom-4 left-4 right-4">
           <div className="text-xs text-muted-foreground text-center transition-opacity duration-200 hover:opacity-80">
             SpendSmart v2.0
@@ -350,7 +328,6 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
         </div>
       </div>
 
-      {/* Overlay */}
       {isOpen && (
         <div 
           className="fixed inset-0 bg-background/80 backdrop-blur-sm z-30 lg:hidden transition-all duration-300"

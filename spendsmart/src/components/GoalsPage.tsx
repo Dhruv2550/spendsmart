@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../config/api';
+import { useAuth } from '../contexts/AuthContext';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -37,7 +38,6 @@ import {
   Undo2
 } from 'lucide-react';
 
-// Goal types
 interface InvestmentGoal {
   id: number;
   name: string;
@@ -52,7 +52,6 @@ interface InvestmentGoal {
   createdDate: string;
 }
 
-// Goal Contribution Tracking
 interface InvestmentContribution {
   id: number;
   goalId: number;
@@ -62,7 +61,6 @@ interface InvestmentContribution {
   note?: string;
 }
 
-// Optimistic operation tracking
 interface OptimisticOperation {
   id: string;
   type: 'create_goal' | 'update_goal' | 'delete_goal' | 'add_contribution';
@@ -71,6 +69,8 @@ interface OptimisticOperation {
 }
 
 const GoalsPage: React.FC = () => {
+  const { userId } = useAuth();
+  
   const [goals, setGoals] = useState<InvestmentGoal[]>([]);
   const [contributions, setContributions] = useState<InvestmentContribution[]>([]);
   const [showAddGoal, setShowAddGoal] = useState(false);
@@ -82,16 +82,25 @@ const GoalsPage: React.FC = () => {
   const [currentSavings, setCurrentSavings] = useState(0);
   const [activeTab, setActiveTab] = useState('goals');
   
-  // Optimistic state (removed toast system)
   const [optimisticOperations, setOptimisticOperations] = useState<OptimisticOperation[]>([]);
   const [deletedGoalId, setDeletedGoalId] = useState<number | null>(null);
   const [pendingOperations, setPendingOperations] = useState<Set<string>>(new Set());
 
-  // Load current savings from Dashboard data with optimistic updates
+  const getAuthHeaders = () => ({
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${userId}`,
+    'X-User-ID': userId || '',
+  });
+
   useEffect(() => {
     const fetchCurrentSavings = async () => {
+      if (!userId) return;
+      
       try {
-        const response = await fetch(`${API_BASE_URL}/api/records`);
+        const response = await fetch(`${API_BASE_URL}/api/records`, {
+          headers: getAuthHeaders()
+        });
+        
         if (response.ok) {
           const transactions = await response.json();
           const totalIncome = transactions
@@ -109,9 +118,8 @@ const GoalsPage: React.FC = () => {
     };
 
     fetchCurrentSavings();
-  }, []);
+  }, [userId]);
 
-  // Load data from localStorage
   useEffect(() => {
     const savedGoals = localStorage.getItem('spendsmart_financial_goals');
     const savedContributions = localStorage.getItem('spendsmart_goal_contributions');
@@ -124,7 +132,6 @@ const GoalsPage: React.FC = () => {
     }
   }, []);
 
-  // Save data to localStorage
   useEffect(() => {
     if (goals.length > 0) {
       localStorage.setItem('spendsmart_financial_goals', JSON.stringify(goals));
@@ -137,7 +144,6 @@ const GoalsPage: React.FC = () => {
     }
   }, [contributions]);
 
-  // Calculate goal metrics with optimistic updates
   const goalMetrics = useMemo(() => {
     const activeGoals = goals.filter(g => g.isActive && g.currentAmount < g.targetAmount);
     const totalTargetAmount = activeGoals.reduce((sum, g) => sum + g.targetAmount, 0);
@@ -183,7 +189,6 @@ const GoalsPage: React.FC = () => {
     return colors[priority];
   };
 
-  // Calculate time-based insights for a goal
   const getGoalInsights = (goal: InvestmentGoal) => {
     const today = new Date();
     const targetDate = new Date(goal.targetDate);
@@ -205,12 +210,10 @@ const GoalsPage: React.FC = () => {
     };
   };
 
-  // Tab switching (removed toast feedback)
   const handleTabChange = (value: string) => {
     setActiveTab(value);
   };
 
-  // Goal Form Component with FIXED modal positioning
   const GoalForm: React.FC<{
     goal?: InvestmentGoal | null;
     onClose: () => void;
@@ -248,10 +251,8 @@ const GoalsPage: React.FC = () => {
           createdDate: goal?.createdDate || new Date().toISOString()
         };
 
-        // Optimistic update - immediately save
         onSave(goalData);
 
-        // Simulate API call
         await new Promise(resolve => setTimeout(resolve, 500));
         
         onClose();
@@ -267,7 +268,7 @@ const GoalsPage: React.FC = () => {
         <DialogContent className="sm:max-w-2xl w-[95vw] max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {goal ? 'Edit Financial Goal' : 'Create New Financial Goal test'}
+              {goal ? 'Edit Financial Goal' : 'Create New Financial Goal'}
             </DialogTitle>
           </DialogHeader>
 
@@ -432,7 +433,6 @@ const GoalsPage: React.FC = () => {
     );
   };
 
-  // Contribution Form Component with FIXED modal positioning
   const ContributionForm: React.FC<{
     goalId: number;
     onClose: () => void;
@@ -460,10 +460,8 @@ const GoalsPage: React.FC = () => {
           note: formData.note
         };
 
-        // Optimistic update - immediately save
         onSave(contributionData);
 
-        // Simulate API call
         await new Promise(resolve => setTimeout(resolve, 300));
         
         onClose();
@@ -568,17 +566,14 @@ const GoalsPage: React.FC = () => {
     );
   };
 
-  // Optimistic goal operations
   const handleAddGoal = (goalData: Omit<InvestmentGoal, 'id'>) => {
     const newGoal = {
       ...goalData,
       id: Math.max(...goals.map(g => g.id), 0) + 1
     };
     
-    // Immediate optimistic update
     setGoals(prev => [...prev, newGoal]);
     
-    // Track operation for potential rollback
     const operationId = Math.random().toString(36).substr(2, 9);
     setOptimisticOperations(prev => [...prev, {
       id: operationId,
@@ -586,7 +581,6 @@ const GoalsPage: React.FC = () => {
       goalId: newGoal.id
     }]);
 
-    // Background "API call"
     setTimeout(() => {
       setOptimisticOperations(prev => prev.filter(op => op.id !== operationId));
     }, 1000);
@@ -597,12 +591,10 @@ const GoalsPage: React.FC = () => {
       const originalGoal = editingGoal;
       const updatedGoal = { ...goalData, id: editingGoal.id };
       
-      // Immediate optimistic update
       setGoals(prev => prev.map(goal => 
         goal.id === editingGoal.id ? updatedGoal : goal
       ));
       
-      // Track operation for potential rollback
       const operationId = Math.random().toString(36).substr(2, 9);
       setOptimisticOperations(prev => [...prev, {
         id: operationId,
@@ -613,7 +605,6 @@ const GoalsPage: React.FC = () => {
 
       setEditingGoal(null);
 
-      // Background "API call"
       setTimeout(() => {
         setOptimisticOperations(prev => prev.filter(op => op.id !== operationId));
       }, 1000);
@@ -627,7 +618,6 @@ const GoalsPage: React.FC = () => {
     const confirmed = window.confirm('Are you sure you want to delete this goal? All associated contributions will also be deleted.');
     
     if (confirmed) {
-      // Immediate optimistic update
       const originalGoals = goals;
       const originalContributions = contributions;
       
@@ -635,7 +625,6 @@ const GoalsPage: React.FC = () => {
       setContributions(prev => prev.filter(contrib => contrib.goalId !== id));
       setDeletedGoalId(id);
 
-      // Track operation for undo
       const operationId = Math.random().toString(36).substr(2, 9);
       setOptimisticOperations(prev => [...prev, {
         id: operationId,
@@ -644,7 +633,6 @@ const GoalsPage: React.FC = () => {
         originalData: { goals: originalGoals, contributions: originalContributions }
       }]);
 
-      // Background "API call" - remove undo option after delay
       setTimeout(() => {
         setOptimisticOperations(prev => prev.filter(op => op.id !== operationId));
         setDeletedGoalId(null);
@@ -671,7 +659,6 @@ const GoalsPage: React.FC = () => {
       id: Math.max(...contributions.map(c => c.id), 0) + 1
     };
     
-    // Immediate optimistic updates
     setContributions(prev => [...prev, newContribution]);
     setGoals(prev => prev.map(goal => 
       goal.id === contributionData.goalId 
@@ -679,36 +666,42 @@ const GoalsPage: React.FC = () => {
         : goal
     ));
 
-    // Track operation
     const operationId = Math.random().toString(36).substr(2, 9);
     setOptimisticOperations(prev => [...prev, {
       id: operationId,
       type: 'add_contribution'
     }]);
 
-    // Background "API call"
     setTimeout(() => {
       setOptimisticOperations(prev => prev.filter(op => op.id !== operationId));
     }, 1000);
   };
 
-  // Completed goals toggle (removed toast feedback)
   const handleToggleCompletedGoals = () => {
     setShowCompletedGoals(prev => !prev);
   };
 
-  // Dynamic skeleton loading instead of static spinner
+  if (!userId) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
+        <div className="container mx-auto px-4 py-8">
+          <div className="text-center">
+            <p className="text-lg">Loading user session...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
         <div className="container mx-auto px-4 py-8">
-          {/* Header Skeleton */}
           <div className="mb-8">
             <div className="h-8 bg-gray-200 rounded w-32 mb-2 animate-pulse"></div>
             <div className="h-4 bg-gray-200 rounded w-64 animate-pulse"></div>
           </div>
 
-          {/* Overview Cards Skeleton */}
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8">
             {[1, 2, 3, 4].map((i) => (
               <Card key={i} className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
@@ -731,72 +724,6 @@ const GoalsPage: React.FC = () => {
               </Card>
             ))}
           </div>
-
-          {/* Tabs Skeleton */}
-          <div className="space-y-6">
-            <div className="h-10 bg-gray-200 rounded w-full animate-pulse"></div>
-            
-            {/* Goals Header Skeleton */}
-            <div className="flex justify-between items-center">
-              <div className="h-6 bg-gray-200 rounded w-20 animate-pulse"></div>
-              <div className="h-10 bg-gray-200 rounded w-32 animate-pulse"></div>
-            </div>
-
-            {/* Goal Cards Skeleton */}
-            <div className="grid gap-4">
-              {[1, 2, 3].map((i) => (
-                <Card key={i} className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
-                  <CardContent className="p-6">
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="flex items-center gap-3 flex-1">
-                        <div className="p-2 rounded-lg bg-gray-200 animate-pulse">
-                          <div className="h-5 w-5 bg-gray-300 rounded animate-pulse"></div>
-                        </div>
-                        <div className="flex-1">
-                          <div className="h-6 bg-gray-200 rounded w-48 mb-1 animate-pulse"></div>
-                          <div className="h-4 bg-gray-200 rounded w-64 mb-2 animate-pulse"></div>
-                          <div className="h-5 bg-gray-200 rounded w-20 animate-pulse"></div>
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <div className="h-8 bg-gray-200 rounded w-24 animate-pulse"></div>
-                        <div className="h-8 w-8 bg-gray-200 rounded animate-pulse"></div>
-                        <div className="h-8 w-8 bg-gray-200 rounded animate-pulse"></div>
-                      </div>
-                    </div>
-
-                    {/* Progress Section Skeleton */}
-                    <div className="space-y-4">
-                      <div className="flex justify-between text-sm">
-                        <div className="h-4 bg-gray-200 rounded w-40 animate-pulse"></div>
-                        <div className="h-4 bg-gray-200 rounded w-12 animate-pulse"></div>
-                      </div>
-                      
-                      <div className="w-full bg-gray-200 rounded-full h-3 animate-pulse"></div>
-
-                      {/* Goal Insights Skeleton */}
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {[1, 2, 3, 4].map((j) => (
-                          <div key={j}>
-                            <div className="h-3 bg-gray-200 rounded w-16 mb-1 animate-pulse"></div>
-                            <div className="h-4 bg-gray-200 rounded w-20 animate-pulse"></div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Status Alert Skeleton */}
-                      <div className="bg-gray-100 border border-gray-200 rounded-lg p-3">
-                        <div className="flex items-center">
-                          <div className="h-4 w-4 bg-gray-200 rounded mr-2 animate-pulse"></div>
-                          <div className="h-4 bg-gray-200 rounded w-64 animate-pulse"></div>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     );
@@ -805,7 +732,6 @@ const GoalsPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
       <div className="container mx-auto px-4 py-8">
-        {/* Undo deleted goal notification */}
         {deletedGoalId && (
           <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-lg border shadow-lg bg-orange-50 text-orange-800 border-orange-200">
             <AlertCircle className="h-4 w-4" />
@@ -822,7 +748,6 @@ const GoalsPage: React.FC = () => {
           </div>
         )}
 
-        {/* Header */}
         <div className="mb-8 transition-all duration-300">
           <h1 className="text-3xl font-bold text-primary mb-2">
             Goals
@@ -830,7 +755,6 @@ const GoalsPage: React.FC = () => {
           <p className="text-muted-foreground">Plan and track progress toward your life goals</p>
         </div>
 
-        {/* Overview Cards */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8">
           <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg hover:scale-[1.02]">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -907,7 +831,6 @@ const GoalsPage: React.FC = () => {
             <TabsTrigger value="analytics" className="transition-all duration-200">Analytics</TabsTrigger>
           </TabsList>
 
-          {/* Goals Tab */}
           <TabsContent value="goals" className="space-y-6">
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-semibold">Goals</h2>
@@ -978,7 +901,6 @@ const GoalsPage: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Progress Section */}
                       <div className="space-y-4">
                         <div className="flex justify-between text-sm">
                           <span>Progress: {formatCurrency(goal.currentAmount)} / {formatCurrency(goal.targetAmount)}</span>
@@ -995,7 +917,6 @@ const GoalsPage: React.FC = () => {
                           />
                         </div>
 
-                        {/* Goal Insights */}
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                           <div>
                             <p className="text-muted-foreground">Time Left</p>
@@ -1020,7 +941,6 @@ const GoalsPage: React.FC = () => {
                           </div>
                         </div>
 
-                        {/* Status Alert */}
                         {!insights.isOnTrack ? (
                           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 transition-all duration-200">
                             <div className="flex items-center">
@@ -1066,7 +986,6 @@ const GoalsPage: React.FC = () => {
               )}
             </div>
 
-            {/* Completed Goals Section */}
             {goals.filter(g => g.currentAmount >= g.targetAmount).length > 0 && (
               <div className="mt-8">
                 <Button
@@ -1160,12 +1079,10 @@ const GoalsPage: React.FC = () => {
             )}
           </TabsContent>
 
-          {/* Analytics Tab */}
           <TabsContent value="analytics" className="space-y-6">
             <h2 className="text-xl font-semibold">Goal Analytics</h2>
             
             <div className="grid md:grid-cols-2 gap-6">
-              {/* Goal Distribution */}
               <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg hover:scale-[1.005]">
                 <CardHeader>
                   <CardTitle>Goals by Category</CardTitle>
@@ -1197,7 +1114,6 @@ const GoalsPage: React.FC = () => {
                 </CardContent>
               </Card>
 
-              {/* Goal Timeline */}
               <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg hover:scale-[1.005]">
                 <CardHeader>
                   <CardTitle>Upcoming Milestones</CardTitle>
@@ -1232,7 +1148,6 @@ const GoalsPage: React.FC = () => {
                 </CardContent>
               </Card>
 
-              {/* Goal Planning Tips */}
               <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg hover:scale-[1.005]">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -1255,7 +1170,6 @@ const GoalsPage: React.FC = () => {
                 </CardContent>
               </Card>
 
-              {/* Priority Guide */}
               <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg hover:scale-[1.005]">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -1291,7 +1205,6 @@ const GoalsPage: React.FC = () => {
           </TabsContent>
         </Tabs>
 
-        {/* Modals */}
         {showAddGoal && (
           <GoalForm
             goal={editingGoal}

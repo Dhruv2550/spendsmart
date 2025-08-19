@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../config/api';
+import { useAuth } from '../contexts/AuthContext';
 import React, { useState, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Button } from './ui/button';
@@ -72,6 +73,8 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
   transactions,
   onImportSuccess
 }) => {
+  const { userId } = useAuth();
+  
   const [activeTab, setActiveTab] = useState<'export' | 'import'>('export');
   const [exportFormat, setExportFormat] = useState<'csv' | 'excel'>('csv');
   const [exportRange, setExportRange] = useState<'all' | 'month' | 'custom'>('all');
@@ -99,6 +102,12 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
   const removeToast = (id: number) => {
     setToasts(prev => prev.filter(toast => toast.id !== id));
   };
+
+  const getAuthHeaders = () => ({
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${userId}`,
+    'X-User-ID': userId || '',
+  });
 
   const optimisticTabSwitch = (newTab: 'export' | 'import') => {
     setActiveTab(newTab);
@@ -235,7 +244,7 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
 
   const handleFileImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file) return;
+    if (!file || !userId) return;
 
     if (!file.name.endsWith('.csv')) {
       addToast('Please select a CSV file', 'error', 4000);
@@ -312,7 +321,7 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
         try {
           const response = await fetch(`${API_BASE_URL}/api/records`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify(transaction)
           });
           
@@ -342,6 +351,24 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
   };
 
   const filteredCount = getFilteredTransactions().length;
+
+  if (!userId) {
+    return (
+      <>
+        <Dialog open={isOpen} onOpenChange={onClose}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Export/Import Transactions</DialogTitle>
+            </DialogHeader>
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">Loading user session...</p>
+            </div>
+          </DialogContent>
+        </Dialog>
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+      </>
+    );
+  }
 
   return (
     <>

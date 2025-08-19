@@ -3,8 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { X, Bell, AlertTriangle, CheckCircle, Eye, EyeOff, Info, Loader2, Undo2, RefreshCw } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
-// Toast notification system
 interface ToastNotification {
   id: string;
   type: 'success' | 'error' | 'info';
@@ -80,12 +80,12 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
   month, 
   onAlertAction 
 }) => {
+  const { userId, isAuthenticated, isLoading } = useAuth();
   const [alerts, setAlerts] = useState<SpendingAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAllAlerts, setShowAllAlerts] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   
-  // Toast and optimistic state management
   const [toasts, setToasts] = useState<ToastNotification[]>([]);
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
   const [dismissedAlert, setDismissedAlert] = useState<SpendingAlert | null>(null);
@@ -100,8 +100,13 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
     setToasts(prev => prev.filter(toast => toast.id !== id));
   };
 
-  // Optimistic alerts loading with feedback
   const loadAlerts = async (showLoadingToast = false) => {
+    if (!userId) {
+      console.error('No user ID available for loading alerts');
+      setLoading(false);
+      return;
+    }
+
     if (showLoadingToast) {
       setIsRefreshing(true);
       addToast({
@@ -112,10 +117,16 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/alerts`);
+      const response = await fetch(`${API_BASE_URL}/api/alerts`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userId}`,
+          'X-User-ID': userId,
+        }
+      });
+      
       if (response.ok) {
         const alertsData = await response.json();
-        // Filter alerts for the current month if they have month data
         const filteredAlerts = alertsData.data ? alertsData.data.filter((alert: SpendingAlert) => 
           alert.month === month || !alert.month
         ) : [];
@@ -144,19 +155,21 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
   };
 
   useEffect(() => {
-    loadAlerts();
-  }, [month]);
+    if (isAuthenticated && userId && !isLoading) {
+      loadAlerts();
+    } else {
+      setLoading(false);
+    }
+  }, [month, userId, isAuthenticated, isLoading]);
 
-  // Optimistic mark as read with immediate feedback
   const markAsRead = async (alertId: string) => {
-    if (processingIds.has(alertId)) return;
+    if (processingIds.has(alertId) || !userId) return;
     
     const alert = alerts.find(a => a.id === alertId);
     if (!alert) return;
 
     setProcessingIds(prev => new Set(prev).add(alertId));
     
-    // Optimistic update
     setAlerts(prev => prev.map(alert => 
       alert.id === alertId ? { ...alert, is_read: true } : alert
     ));
@@ -169,7 +182,12 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/alerts/${alertId}/read`, {
-        method: 'PATCH'
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userId}`,
+          'X-User-ID': userId,
+        }
       });
       
       if (!response.ok) {
@@ -179,7 +197,6 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
       onAlertAction?.();
     } catch (error) {
       console.error('Error marking alert as read:', error);
-      // Rollback on error
       setAlerts(prev => prev.map(alert => 
         alert.id === alertId ? { ...alert, is_read: false } : alert
       ));
@@ -196,19 +213,16 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
     }
   };
 
-  // Optimistic dismiss with undo functionality
   const dismissAlert = async (alertId: string) => {
-    if (processingIds.has(alertId)) return;
+    if (processingIds.has(alertId) || !userId) return;
     
     const alert = alerts.find(a => a.id === alertId);
     if (!alert) return;
 
     setProcessingIds(prev => new Set(prev).add(alertId));
     
-    // Store for potential undo
     setDismissedAlert(alert);
     
-    // Optimistic removal
     setAlerts(prev => prev.filter(alert => alert.id !== alertId));
 
     addToast({
@@ -219,7 +233,12 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/alerts/${alertId}/dismiss`, {
-        method: 'PATCH'
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userId}`,
+          'X-User-ID': userId,
+        }
       });
       
       if (!response.ok) {
@@ -228,14 +247,12 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
       
       onAlertAction?.();
       
-      // Clear undo option after successful dismissal
       setTimeout(() => {
         setDismissedAlert(null);
       }, 5000);
       
     } catch (error) {
       console.error('Error dismissing alert:', error);
-      // Rollback on error
       setAlerts(prev => [...prev, alert].sort((a, b) => 
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       ));
@@ -253,7 +270,6 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
     }
   };
 
-  // Undo dismiss functionality
   const undoDismiss = () => {
     if (dismissedAlert) {
       setAlerts(prev => [...prev, dismissedAlert].sort((a, b) => 
@@ -267,9 +283,8 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
     }
   };
 
-  // Optimistic dismiss all with batch feedback
   const dismissAllAlerts = async () => {
-    if (isDismissingAll || alerts.length === 0) return;
+    if (isDismissingAll || alerts.length === 0 || !userId) return;
     
     const confirmed = window.confirm(`Are you sure you want to dismiss all ${alerts.length} alerts? This action cannot be undone.`);
     if (!confirmed) return;
@@ -277,7 +292,6 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
     setIsDismissingAll(true);
     const originalAlerts = [...alerts];
     
-    // Optimistic update
     setAlerts([]);
     
     addToast({
@@ -288,7 +302,12 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/alerts/dismiss-all/${month}`, {
-        method: 'PATCH'
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userId}`,
+          'X-User-ID': userId,
+        }
       });
       
       if (!response.ok) {
@@ -302,7 +321,6 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
       });
     } catch (error) {
       console.error('Error dismissing all alerts:', error);
-      // Rollback on error
       setAlerts(originalAlerts);
       addToast({
         type: 'error',
@@ -313,7 +331,6 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
     }
   };
 
-  // Optimistic browser notification permission
   const requestNotificationPermission = async () => {
     if (!('Notification' in window)) {
       addToast({
@@ -345,7 +362,6 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
           message: 'Browser notifications enabled successfully!'
         });
         
-        // Show test notification
         new Notification('SpendSmart Alerts', {
           body: 'You will now receive spending alerts and reminders.',
           icon: '/favicon.ico'
@@ -364,7 +380,6 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
     }
   };
 
-  // Optimistic view toggle
   const handleViewToggle = () => {
     setShowAllAlerts(!showAllAlerts);
     addToast({
@@ -374,16 +389,15 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
     });
   };
 
-  // Monitor for new alerts with optimistic refresh
   useEffect(() => {
     const interval = setInterval(() => {
-      if (!loading && !isRefreshing) {
+      if (!loading && !isRefreshing && isAuthenticated && userId) {
         loadAlerts();
       }
-    }, 30000); // Check every 30 seconds
+    }, 30000);
     
     return () => clearInterval(interval);
-  }, [month, loading, isRefreshing]);
+  }, [month, loading, isRefreshing, isAuthenticated, userId]);
 
   const formatDate = (dateString: string) => new Date(dateString).toLocaleDateString();
 
@@ -399,8 +413,24 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
     return 'border-yellow-200 bg-yellow-50';
   };
 
-  const unreadAlerts = alerts.filter(alert => !alert.is_read);
-  const readAlerts = alerts.filter(alert => alert.is_read);
+  if (isLoading) {
+    return (
+      <div className="mb-6">
+        <Card className="border-blue-200 bg-blue-50 shadow-md">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
+              <p className="font-medium text-blue-800">Loading your alerts...</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated || !userId) {
+    return null;
+  }
 
   if (loading) {
     return (
@@ -419,14 +449,15 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
 
   if (alerts.length === 0) return null;
 
+  const unreadAlerts = alerts.filter(alert => !alert.is_read);
+  const readAlerts = alerts.filter(alert => alert.is_read);
+
   return (
     <div className="mb-6">
-      {/* Toast notifications */}
       {toasts.map(toast => (
         <Toast key={toast.id} notification={toast} onRemove={removeToast} />
       ))}
 
-      {/* Undo dismissed alert notification */}
       {dismissedAlert && (
         <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-lg border shadow-lg bg-orange-50 text-orange-800 border-orange-200">
           <AlertTriangle className="h-4 w-4" />
@@ -443,7 +474,6 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
         </div>
       )}
 
-      {/* Compact Alert Summary */}
       {!showAllAlerts && alerts.length > 0 && (
         <Card className="border-orange-200 bg-orange-50 shadow-md transition-all duration-300 hover:shadow-lg hover:scale-[1.005]">
           <CardContent className="p-4">
@@ -492,7 +522,6 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
         </Card>
       )}
 
-      {/* Detailed Alerts View */}
       {showAllAlerts && (
         <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg">
           <CardHeader>
@@ -530,7 +559,6 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {/* Unread Alerts */}
               {unreadAlerts.length > 0 && (
                 <div>
                   <h4 className="font-medium text-sm mb-3 flex items-center gap-2">
@@ -592,7 +620,6 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
                 </div>
               )}
 
-              {/* Read Alerts */}
               {readAlerts.length > 0 && (
                 <div>
                   <h4 className="font-medium text-sm mb-3 flex items-center gap-2">
@@ -638,7 +665,6 @@ const SpendingAlertsNotification: React.FC<SpendingAlertsNotificationProps> = ({
                 </div>
               )}
 
-              {/* Actions */}
               <div className="flex gap-3 pt-4 border-t">
                 <Button 
                   variant="outline" 

@@ -1,5 +1,5 @@
-// src/components/AIInsightsComponent.tsx
 import { API_BASE_URL } from '../config/api';
+import { useAuth } from '../contexts/AuthContext';
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -28,7 +28,6 @@ import {
   X
 } from 'lucide-react';
 
-// Toast System for Error Feedback
 interface Toast {
   id: number;
   message: string;
@@ -138,7 +137,8 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
   selectedMonth, 
   budgetTemplate = 'Default' 
 }) => {
-  // Core state
+  const { userId } = useAuth();
+  
   const [insights, setInsights] = useState<AIInsights | null>(null);
   const [loading, setLoading] = useState(false);
   const [backgroundRefresh, setBackgroundRefresh] = useState(false);
@@ -146,11 +146,9 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [selectedPredictionMonth, setSelectedPredictionMonth] = useState<string>('');
   
-  // Toast system state
   const [toasts, setToasts] = useState<Toast[]>([]);
   const toastIdRef = useRef(0);
 
-  // Toast functions
   const addToast = (message: string, type: Toast['type'] = 'info', duration = 5000) => {
     const id = ++toastIdRef.current;
     const newToast: Toast = { id, message, type, duration };
@@ -166,7 +164,6 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
     setToasts(prev => prev.filter(toast => toast.id !== id));
   };
 
-  // Enhanced retry logic with exponential backoff
   const retryWithBackoff = async (fn: () => Promise<any>, maxRetries = 3) => {
     for (let i = 0; i < maxRetries; i++) {
       try {
@@ -180,13 +177,15 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
     }
   };
 
-  // Optimistic load insights with immediate UI feedback
   const loadInsights = async (showOptimisticLoading = true) => {
-    // For initial load, show full loading screen
+    if (!userId) {
+      setError('No user authentication found');
+      return;
+    }
+
     if (!insights && showOptimisticLoading) {
       setLoading(true);
     } else {
-      // For refreshes, show background loading indicator
       setBackgroundRefresh(true);
     }
     
@@ -194,7 +193,13 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
     
     try {
       const response = await retryWithBackoff(() => 
-        fetch(`${API_BASE_URL}/api/analytics/insights?template=${budgetTemplate}`)
+        fetch(`${API_BASE_URL}/api/analytics/insights?template=${budgetTemplate}`, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${userId}`,
+            'X-User-ID': userId,
+          }
+        })
       );
       
       if (!response.ok) {
@@ -203,11 +208,9 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
       
       const data = await response.json();
       
-      // Optimistically update the UI
       setInsights(data);
       setLastUpdated(new Date());
       
-      // Set default selected prediction month to next month
       if (data.predictions.success && data.predictions.data.length > 0) {
         setSelectedPredictionMonth(prev => 
           prev || data.predictions.data[0].month
@@ -218,11 +221,9 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
       console.error('Error loading AI insights:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to load insights';
       
-      // Only show loading error if we don't have existing data
       if (!insights) {
         setError(errorMessage);
       } else {
-        // If we have existing data, just show a toast
         addToast(`Failed to refresh insights: ${errorMessage}`, 'error');
       }
     } finally {
@@ -231,19 +232,17 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
     }
   };
 
-  // Optimistic prediction month selection
   const handlePredictionMonthChange = (newMonth: string) => {
-    // Immediately update UI
     setSelectedPredictionMonth(newMonth);
     
-    // Add subtle visual feedback
     addToast(`Switched to ${insights?.predictions.data.find(p => p.month === newMonth)?.monthName || newMonth} forecast`, 'info', 2000);
   };
 
-  // Load insights on component mount and dependency changes
   useEffect(() => {
-    loadInsights();
-  }, [selectedMonth, budgetTemplate]);
+    if (userId) {
+      loadInsights();
+    }
+  }, [selectedMonth, budgetTemplate, userId]);
 
   const formatCurrency = (amount: number) => `$${amount.toLocaleString()}`;
 
@@ -274,7 +273,6 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
     
     const insights = [];
     
-    // Compare to historical average
     if (prediction.totalPredicted > prediction.factors.historicalAverage * 1.1) {
       insights.push({
         type: 'warning',
@@ -287,10 +285,9 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
       });
     }
     
-    // Identify fastest growing categories
     const growingCategories = categories.filter(([cat, pred]) => {
       const growthFactor = parseFloat(pred.factors.growthAdjustment.replace('%', ''));
-      return growthFactor > 5; // Growing by more than 5%
+      return growthFactor > 5;
     });
     
     if (growingCategories.length > 0) {
@@ -303,7 +300,19 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
     return insights;
   };
 
-  // Optimistic loading state with existing data
+  if (!userId) {
+    return (
+      <div className="space-y-6">
+        <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
+          <CardContent className="p-6 text-center">
+            <p className="text-muted-foreground">Loading user session...</p>
+          </CardContent>
+        </Card>
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+      </div>
+    );
+  }
+
   if (loading && !insights) {
     return (
       <div className="space-y-6">
@@ -362,7 +371,6 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* AI Insights Header with Background Refresh Indicator */}
       <Card className="border-0 shadow-md bg-gradient-to-br from-primary/5 to-primary/10">
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -422,7 +430,6 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
         </CardContent>
       </Card>
 
-      {/* AI Insights Tabs */}
       <Tabs defaultValue="predictions" className="space-y-6">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="predictions" className="flex items-center gap-2">
@@ -445,11 +452,9 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
           </TabsTrigger>
         </TabsList>
 
-        {/* Enhanced Spending Predictions Tab */}
         <TabsContent value="predictions" className="space-y-6">
           {insights.predictions.success && insights.predictions.data.length > 0 ? (
             <div className="space-y-6">
-              {/* Prediction Overview */}
               <Card className="border-0 shadow-md bg-gradient-to-br from-blue-50 to-blue-100">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -488,7 +493,6 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
                 </CardContent>
               </Card>
 
-              {/* Optimistic Month Selector */}
               {insights.predictions.data.length > 1 && (
                 <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
                   <CardContent className="p-4">
@@ -510,10 +514,8 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
                 </Card>
               )}
 
-              {/* Detailed Prediction View */}
               {selectedPrediction && (
                 <div className="space-y-4">
-                  {/* Forecast Summary */}
                   <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
@@ -522,7 +524,6 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      {/* Total Prediction with Comparison */}
                       <div className="bg-gradient-to-r from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-6">
                         <div className="flex items-center justify-between mb-4">
                           <div>
@@ -539,7 +540,6 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
                           </div>
                         </div>
                         
-                        {/* Prediction vs Historical Comparison */}
                         <div className="space-y-2">
                           <div className="flex justify-between text-sm">
                             <span className="text-blue-700">Predicted:</span>
@@ -563,7 +563,6 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
                         </div>
                       </div>
 
-                      {/* Prediction Factors */}
                       <div className="grid grid-cols-3 gap-3">
                         <div className="text-center p-3 bg-gray-50 rounded-lg">
                           <div className="text-xs text-gray-500">Seasonal Factor</div>
@@ -581,7 +580,6 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
                     </CardContent>
                   </Card>
 
-                  {/* Category Predictions with Enhanced Details */}
                   <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
@@ -624,7 +622,6 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
                                   </div>
                                 </div>
 
-                                {/* Prediction Breakdown */}
                                 <div className="grid grid-cols-3 gap-3 text-xs">
                                   <div className="text-center p-2 bg-white/60 rounded">
                                     <div className="text-gray-500">Base Average</div>
@@ -644,7 +641,6 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
                                   </div>
                                 </div>
 
-                                {/* Trend Indicator */}
                                 {(growthFactor > 10 || seasonalFactor > 1.2) && (
                                   <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded flex items-center gap-2">
                                     <Zap className="h-4 w-4 text-yellow-600" />
@@ -661,7 +657,6 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
                     </CardContent>
                   </Card>
 
-                  {/* Smart Forecast Insights */}
                   <Card className="border-0 shadow-md bg-gradient-to-br from-green-50 to-green-100">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
@@ -696,7 +691,6 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
                           </div>
                         ))}
                         
-                        {/* General prediction insights */}
                         {insights.predictions.insights.length > 0 && (
                           <div className="pt-3 border-t border-green-200">
                             <h4 className="font-medium text-green-800 mb-2">Additional Insights:</h4>
@@ -712,7 +706,6 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
                     </CardContent>
                   </Card>
 
-                  {/* Multi-Month Comparison */}
                   {insights.predictions.data.length > 1 && (
                     <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
                       <CardHeader>
@@ -790,11 +783,9 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
           )}
         </TabsContent>
 
-        {/* Enhanced Anomaly Detection Tab */}
         <TabsContent value="anomalies" className="space-y-4">
           {insights.anomalies.success && insights.anomalies.data.length > 0 ? (
             <div className="space-y-4">
-              {/* Anomaly Summary */}
               <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -837,7 +828,6 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
                 </CardContent>
               </Card>
 
-              {/* Detailed Anomaly List with Hover Effects */}
               <div className="space-y-3">
                 {insights.anomalies.data.map((anomaly, index) => {
                   const AnomalyIcon = getAnomalyIcon(anomaly.type);
@@ -888,7 +878,6 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
                               </div>
                             )}
 
-                            {/* Statistical Details */}
                             {anomaly.details && Object.keys(anomaly.details).length > 0 && (
                               <div className="mt-2 text-xs text-gray-600 bg-white/40 p-2 rounded">
                                 <div className="font-medium mb-1">Statistical Analysis:</div>
@@ -938,7 +927,6 @@ const AIInsightsComponent: React.FC<AIInsightsComponentProps> = ({
         </TabsContent>
       </Tabs>
 
-      {/* Toast Container */}
       <ToastContainer toasts={toasts} removeToast={removeToast} />
     </div>
   );

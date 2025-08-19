@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../config/api';
+import { useAuth } from '../contexts/AuthContext';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -109,6 +110,8 @@ const sizeMap = {
 };
 
 export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLimit }) => {
+  const { userId } = useAuth();
+  
   const [showTransactionForm, setShowTransactionForm] = useState(false);
   const [showAllTransactions, setShowAllTransactions] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
@@ -321,10 +324,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
   };
 
   const { data: transactions = [], refetch, isLoading, error } = useQuery({
-    queryKey: ['transactions'],
+    queryKey: ['transactions', userId],
     queryFn: async (): Promise<Transaction[]> => {
+      if (!userId) {
+        console.error('No user ID available');
+        return [];
+      }
+
       try {
-        const response = await fetch(`${API_BASE_URL}/api/records`);
+        const response = await fetch(`${API_BASE_URL}/api/records`, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${userId}`,
+            'X-User-ID': userId,
+          }
+        });
+
         if (!response.ok) throw new Error('Failed to fetch transactions');
         const rawData = await response.json();
         
@@ -344,6 +359,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
         return [];
       }
     },
+    enabled: !!userId,
   });
 
   const totalIncome = useMemo(() => {
@@ -413,9 +429,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
       return;
     }
 
+    if (!userId) {
+      console.error('No user ID available for deletion');
+      return;
+    }
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/records/${id}`, {
         method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userId}`,
+          'X-User-ID': userId,
+        }
       });
       
       if (!response.ok) {
@@ -1084,6 +1110,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ monthlySavings, expenseLim
   const hiddenWidgets = useMemo(() => {
     return widgets.filter(widget => !widget.visible);
   }, [widgets]);
+
+  if (!userId) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
+        <div className="container mx-auto px-4 py-8">
+          <div className="text-center">
+            <p className="text-lg">Loading user session...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (error) {
     return (

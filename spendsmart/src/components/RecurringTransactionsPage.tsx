@@ -1,4 +1,3 @@
-// src/components/RecurringTransactionsPage.tsx
 import { API_BASE_URL } from '../config/api';
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -10,6 +9,7 @@ import { Textarea } from './ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Switch } from './ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { useAuth } from '../contexts/AuthContext';
 import { 
   Plus, 
   Edit2, 
@@ -55,6 +55,7 @@ interface RecurringTransaction {
 }
 
 const RecurringTransactionsPage: React.FC = () => {
+  const { userId, isAuthenticated, isLoading } = useAuth();
   const [recurringTransactions, setRecurringTransactions] = useState<RecurringTransaction[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<RecurringTransaction | null>(null);
@@ -63,7 +64,6 @@ const RecurringTransactionsPage: React.FC = () => {
   const [selectedView, setSelectedView] = useState<'all' | 'bills' | 'income'>('all');
   const [activeTab, setActiveTab] = useState('all');
   
-  // Optimistic state management (removed toast system)
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
   const [deletedTransactionId, setDeletedTransactionId] = useState<string | null>(null);
   const [originalTransactions, setOriginalTransactions] = useState<RecurringTransaction[]>([]);
@@ -73,12 +73,23 @@ const RecurringTransactionsPage: React.FC = () => {
     income: ["Salary", "Freelance", "Investment", "Bonus", "Gift", "Other"]
   };
 
-  // Load recurring transactions with background loading
   const loadRecurringTransactions = async () => {
+    if (!userId) {
+      console.error('No user ID available for loading recurring transactions');
+      return;
+    }
+
     setBackgroundLoading(true);
     
     try {
-      const response = await fetch(`${API_BASE_URL}/api/recurring`);
+      const response = await fetch(`${API_BASE_URL}/api/recurring`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userId}`,
+          'X-User-ID': userId,
+        }
+      });
+      
       if (!response.ok) throw new Error('Failed to load recurring transactions');
       const data = await response.json();
       setRecurringTransactions(data);
@@ -90,18 +101,24 @@ const RecurringTransactionsPage: React.FC = () => {
   };
 
   useEffect(() => {
-    loadRecurringTransactions();
-  }, []);
+    if (isAuthenticated && userId && !isLoading) {
+      loadRecurringTransactions();
+    }
+  }, [isAuthenticated, userId, isLoading]);
 
-  // Process due transactions
   const processRecurringTransactions = async () => {
-    if (processing) return;
+    if (processing || !userId) return;
     
     setProcessing(true);
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/recurring/execute-due`, {
-        method: 'POST'
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userId}`,
+          'X-User-ID': userId,
+        }
       });
       
       if (!response.ok) throw new Error('Failed to process recurring transactions');
@@ -109,7 +126,6 @@ const RecurringTransactionsPage: React.FC = () => {
       const result = await response.json();
       console.log('Processed recurring transactions:', result);
       
-      // Reload data
       await loadRecurringTransactions();
       
     } catch (error) {
@@ -119,18 +135,25 @@ const RecurringTransactionsPage: React.FC = () => {
     }
   };
 
-  // Mark as paid with enhanced feedback
   const markAsPaid = async (transaction: RecurringTransaction) => {
+    if (!userId) {
+      console.error('No user ID available for marking transaction as paid');
+      return;
+    }
+
     const transactionId = transaction.id;
     setProcessingIds(prev => new Set(prev).add(transactionId));
 
     try {
       const nextDueDate = calculateNextDueDate(transaction.next_execution, transaction.frequency);
       
-      // Create the transaction
       const response = await fetch(`${API_BASE_URL}/api/records`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userId}`,
+          'X-User-ID': userId,
+        },
         body: JSON.stringify({
           type: transaction.type,
           category: transaction.category,
@@ -144,10 +167,13 @@ const RecurringTransactionsPage: React.FC = () => {
         throw new Error('Failed to create payment transaction');
       }
 
-      // Update the next_execution date
       const updateResponse = await fetch(`${API_BASE_URL}/api/recurring/${transaction.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userId}`,
+          'X-User-ID': userId,
+        },
         body: JSON.stringify({
           next_execution: nextDueDate
         })
@@ -157,7 +183,6 @@ const RecurringTransactionsPage: React.FC = () => {
         throw new Error('Failed to update next due date');
       }
 
-      // Optimistic update to UI
       setRecurringTransactions(prev => prev.map(t => 
         t.id === transactionId 
           ? { ...t, next_execution: nextDueDate, last_executed: new Date().toISOString().split('T')[0] }
@@ -175,8 +200,12 @@ const RecurringTransactionsPage: React.FC = () => {
     }
   };
 
-  // Skip transaction
   const skipThisMonth = async (transaction: RecurringTransaction) => {
+    if (!userId) {
+      console.error('No user ID available for skipping transaction');
+      return;
+    }
+
     const confirmed = window.confirm(`Skip this month's "${transaction.name}"? This will move the due date to next occurrence without creating a transaction.`);
     
     if (!confirmed) return;
@@ -189,7 +218,11 @@ const RecurringTransactionsPage: React.FC = () => {
       
       const response = await fetch(`${API_BASE_URL}/api/recurring/${transaction.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userId}`,
+          'X-User-ID': userId,
+        },
         body: JSON.stringify({
           ...transaction,
           next_execution: nextDueDate
@@ -198,7 +231,6 @@ const RecurringTransactionsPage: React.FC = () => {
 
       if (!response.ok) throw new Error('Failed to skip transaction');
 
-      // Optimistic update
       setRecurringTransactions(prev => prev.map(t => 
         t.id === transactionId 
           ? { ...t, next_execution: nextDueDate }
@@ -216,7 +248,6 @@ const RecurringTransactionsPage: React.FC = () => {
     }
   };
 
-  // Helper function to calculate next due date
   const calculateNextDueDate = (currentDate: string, frequency: string): string => {
     const date = new Date(currentDate);
     
@@ -238,12 +269,15 @@ const RecurringTransactionsPage: React.FC = () => {
     return date.toISOString().split('T')[0];
   };
 
-  // Toggle active status
   const toggleActive = async (id: string) => {
+    if (!userId) {
+      console.error('No user ID available for toggling transaction');
+      return;
+    }
+
     const transaction = recurringTransactions.find(t => t.id === id);
     if (!transaction) return;
 
-    // Optimistic update
     const newStatus = !transaction.is_active;
     setRecurringTransactions(prev => prev.map(t => 
       t.id === id ? { ...t, is_active: newStatus } : t
@@ -251,43 +285,53 @@ const RecurringTransactionsPage: React.FC = () => {
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/recurring/${id}/toggle`, {
-        method: 'PUT'
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userId}`,
+          'X-User-ID': userId,
+        }
       });
       
       if (!response.ok) throw new Error('Failed to toggle recurring transaction');
       
     } catch (error) {
       console.error('Error toggling recurring transaction:', error);
-      // Rollback optimistic update
       setRecurringTransactions(prev => prev.map(t => 
         t.id === id ? { ...t, is_active: !newStatus } : t
       ));
     }
   };
 
-  // Delete with undo functionality
   const deleteRecurringTransaction = async (id: string) => {
+    if (!userId) {
+      console.error('No user ID available for deleting transaction');
+      return;
+    }
+
     const transaction = recurringTransactions.find(t => t.id === id);
     if (!transaction) return;
 
     const confirmed = window.confirm('Are you sure you want to delete this recurring transaction?');
     if (!confirmed) return;
 
-    // Store original state for potential undo
     setOriginalTransactions(recurringTransactions);
     setDeletedTransactionId(id);
 
-    // Optimistic removal
     setRecurringTransactions(prev => prev.filter(t => t.id !== id));
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/recurring/${id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userId}`,
+          'X-User-ID': userId,
+        }
       });
       
       if (!response.ok) throw new Error('Failed to delete recurring transaction');
       
-      // Clear undo option after successful delete
       setTimeout(() => {
         setDeletedTransactionId(null);
         setOriginalTransactions([]);
@@ -295,13 +339,11 @@ const RecurringTransactionsPage: React.FC = () => {
 
     } catch (error) {
       console.error('Error deleting recurring transaction:', error);
-      // Rollback on error
       setRecurringTransactions(originalTransactions);
       setDeletedTransactionId(null);
     }
   };
 
-  // Undo delete functionality
   const undoDelete = () => {
     if (originalTransactions.length > 0) {
       setRecurringTransactions(originalTransactions);
@@ -310,12 +352,10 @@ const RecurringTransactionsPage: React.FC = () => {
     }
   };
 
-  // Tab switching
   const handleTabChange = (value: string) => {
     setActiveTab(value);
   };
 
-  // Form handling
   const handleShowForm = () => {
     setShowForm(true);
   };
@@ -357,15 +397,41 @@ const RecurringTransactionsPage: React.FC = () => {
     return icons[category] || DollarSign;
   };
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background flex items-center justify-center">
+        <div className="flex items-center gap-3">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          <span>Loading your data...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated || !userId) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background flex items-center justify-center">
+        <Card className="w-96">
+          <CardContent className="text-center py-8">
+            <AlertCircle className="h-12 w-12 text-orange-500 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold mb-2">Authentication Required</h3>
+            <p className="text-muted-foreground">
+              Please log in to view your recurring transactions.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   const activeTransactions = recurringTransactions.filter(t => t.is_active);
   const inactiveTransactions = recurringTransactions.filter(t => !t.is_active);
   const bills = activeTransactions.filter(t => t.type === 'expense');
   const incomeTransactions = activeTransactions.filter(t => t.type === 'income');
   
-  // Get upcoming bills (next 30 days)
   const upcomingBills = bills.filter(t => {
     const daysUntil = getDaysUntilDue(t.next_execution);
-    return daysUntil <= 30 && daysUntil >= -7; // Include overdue bills up to 7 days
+    return daysUntil <= 30 && daysUntil >= -7;
   }).sort((a, b) => getDaysUntilDue(a.next_execution) - getDaysUntilDue(b.next_execution));
 
   const dueTransactions = activeTransactions.filter(t => getDaysUntilDue(t.next_execution) <= 0);
@@ -377,7 +443,6 @@ const RecurringTransactionsPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
       <div className="container mx-auto px-4 py-8">
-        {/* Undo delete notification */}
         {deletedTransactionId && (
           <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-lg border shadow-lg bg-orange-50 text-orange-800 border-orange-200">
             <AlertCircle className="h-4 w-4" />
@@ -394,7 +459,6 @@ const RecurringTransactionsPage: React.FC = () => {
           </div>
         )}
 
-        {/* Header */}
         <div className="mb-8 transition-all duration-300">
           <h1 className="text-3xl font-bold text-primary mb-2">
             Bills & Recurring
@@ -402,7 +466,6 @@ const RecurringTransactionsPage: React.FC = () => {
           <p className="text-muted-foreground">Manage your bills, recurring transactions, and payment reminders</p>
         </div>
 
-        {/* Action Bar */}
         <div className="flex justify-between items-center mb-8">
           <div className="flex items-center gap-4">
             <Button 
@@ -460,7 +523,6 @@ const RecurringTransactionsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Overview Cards */}
         <div className="grid gap-6 md:grid-cols-4 mb-8">
           <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg hover:scale-[1.02]">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -527,7 +589,6 @@ const RecurringTransactionsPage: React.FC = () => {
           </Card>
         </div>
 
-        {/* Upcoming Bills Dashboard */}
         {upcomingBills.length > 0 && (
           <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 mb-8 transition-all duration-300 hover:shadow-lg">
             <CardHeader>
@@ -626,7 +687,6 @@ const RecurringTransactionsPage: React.FC = () => {
           </Card>
         )}
 
-        {/* Tabs for different views */}
         <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
           <TabsList className="grid w-full grid-cols-3 transition-all duration-200">
             <TabsTrigger value="all" className="flex items-center gap-2 transition-all duration-200">
@@ -643,7 +703,6 @@ const RecurringTransactionsPage: React.FC = () => {
             </TabsTrigger>
           </TabsList>
 
-          {/* All Recurring Transactions */}
           <TabsContent value="all" className="space-y-6">
             <div className="space-y-6">
               <h2 className="text-xl font-semibold">All Active Recurring Transactions</h2>
@@ -829,7 +888,6 @@ const RecurringTransactionsPage: React.FC = () => {
             </div>
           </TabsContent>
 
-          {/* Bills Only View */}
           <TabsContent value="bills" className="space-y-6">
             <div className="space-y-6">
               <h2 className="text-xl font-semibold">Bills & Expenses</h2>
@@ -945,7 +1003,6 @@ const RecurringTransactionsPage: React.FC = () => {
             </div>
           </TabsContent>
 
-          {/* Income Only View */}
           <TabsContent value="income" className="space-y-6">
             <div className="space-y-6">
               <h2 className="text-xl font-semibold">Recurring Income</h2>
@@ -1034,7 +1091,6 @@ const RecurringTransactionsPage: React.FC = () => {
           </TabsContent>
         </Tabs>
 
-        {/* Inactive Transactions */}
         {inactiveTransactions.length > 0 && (
           <div className="mt-8">
             <h3 className="text-lg font-semibold mb-4">Inactive Recurring Transactions</h3>
@@ -1096,10 +1152,10 @@ const RecurringTransactionsPage: React.FC = () => {
           </div>
         )}
 
-        {/* Recurring Transaction Form */}
         {showForm && (
           <RecurringTransactionForm
             transaction={editingTransaction}
+            userId={userId}
             onClose={() => {
               setShowForm(false);
               setEditingTransaction(null);
@@ -1117,9 +1173,9 @@ const RecurringTransactionsPage: React.FC = () => {
   );
 };
 
-// Enhanced Recurring Transaction Form Component
 interface RecurringTransactionFormProps {
   transaction?: RecurringTransaction | null;
+  userId: string | null;
   onClose: () => void;
   onSave: () => void;
   categories: {
@@ -1130,6 +1186,7 @@ interface RecurringTransactionFormProps {
 
 const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
   transaction,
+  userId,
   onClose,
   onSave,
   categories
@@ -1152,6 +1209,12 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!userId) {
+      setError('User authentication required. Please refresh the page and try again.');
+      return;
+    }
+
     setLoading(true);
     setError('');
 
@@ -1174,20 +1237,26 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
       let response;
 
       if (transaction) {
-        // Update existing
         response = await fetch(`${API_BASE_URL}/api/recurring/${transaction.id}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${userId}`,
+            'X-User-ID': userId,
+          },
           body: JSON.stringify({
             ...recurringData,
             next_execution: transaction.next_execution
           })
         });
       } else {
-        // Create new
         response = await fetch(`${API_BASE_URL}/api/recurring`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${userId}`,
+            'X-User-ID': userId,
+          },
           body: JSON.stringify({
             ...recurringData,
             next_execution: formData.start_date
@@ -1318,7 +1387,6 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
             </div>
           </div>
 
-          {/* Bill Reminder Settings */}
           {formData.type === 'expense' && (
             <div className="space-y-2">
               <Label>Reminder Days Before Due</Label>
@@ -1375,7 +1443,7 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
             <Button
               type="submit"
               className="flex-1 transition-all duration-200 hover:scale-[1.02] hover:shadow-md"
-              disabled={!formData.name || !formData.type || !formData.category || !formData.amount || !formData.frequency || loading}
+              disabled={!formData.name || !formData.type || !formData.category || !formData.amount || !formData.frequency || loading || !userId}
             >
               {loading ? (
                 <>

@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../config/api';
+import { useAuth } from '../contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
@@ -87,6 +88,8 @@ const ToastContainer = ({ toasts, removeToast }: {
 );
 
 const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
+  const { userId } = useAuth();
+  
   const [showReportModal, setShowReportModal] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -169,10 +172,22 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
   }, [selectedMonth]);
 
   const { data: transactions = [], isLoading } = useQuery({
-    queryKey: ['transactions'],
+    queryKey: ['transactions', userId],
     queryFn: async (): Promise<Transaction[]> => {
+      if (!userId) {
+        console.error('No user ID available');
+        return [];
+      }
+
       try {
-        const response = await fetch(`${API_BASE_URL}/api/records`);
+        const response = await fetch(`${API_BASE_URL}/api/records`, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${userId}`,
+            'X-User-ID': userId,
+          }
+        });
+
         if (!response.ok) throw new Error('Failed to fetch transactions');
         const rawData = await response.json();
         
@@ -192,6 +207,7 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
         return [];
       }
     },
+    enabled: !!userId,
   });
 
   const getSelectedMonthTransactions = () => {
@@ -643,6 +659,18 @@ const AnalyticsPage = ({ monthlySavings }: AnalyticsPageProps) => {
     if (score >= 40) return 'Fair';
     return 'Needs Improvement';
   };
+
+  if (!userId) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
+        <div className="container mx-auto px-4 py-8">
+          <div className="text-center">
+            <p className="text-lg">Loading user session...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

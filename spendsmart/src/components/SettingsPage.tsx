@@ -8,8 +8,8 @@ import { Separator } from "./ui/separator";
 import { Save, Database, Shield, Bell, Palette, Moon, Sun, AlertTriangle, CheckCircle, Info, AlertCircle, Loader2, X, RefreshCw } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import { useAuth } from '../contexts/AuthContext';
 
-// Toast notification system
 interface ToastNotification {
   id: string;
   type: 'success' | 'error' | 'info';
@@ -70,8 +70,8 @@ interface SettingsPageProps {
 
 const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseLimitChange }: SettingsPageProps) => {
   const { isDarkMode, toggleDarkMode } = useDarkMode();
+  const { userId, isAuthenticated, isLoading } = useAuth();
   
-  // Toast and optimistic state management
   const [toasts, setToasts] = useState<ToastNotification[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
@@ -86,7 +86,6 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
     expenseLimit: "3000"
   });
 
-  // Alert preferences interface
   interface AlertSettings {
     categoryBudgetAlerts: boolean;
     totalBudgetAlerts: boolean;
@@ -100,9 +99,23 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
     };
   }
 
-  // Alert preferences state
   const [alertSettings, setAlertSettings] = useState<AlertSettings>(() => {
-    const saved = localStorage.getItem('spendsmart_alert_settings');
+    if (!isAuthenticated || !userId) {
+      return {
+        categoryBudgetAlerts: true,
+        totalBudgetAlerts: true,
+        recurringDueAlerts: true,
+        goalProgressAlerts: true,
+        browserNotifications: true,
+        alertThresholds: {
+          warning: 80,
+          critical: 90,
+          exceeded: 100
+        }
+      };
+    }
+
+    const saved = localStorage.getItem(`spendsmart_alert_settings_${userId}`);
     const defaultSettings = {
       categoryBudgetAlerts: true,
       totalBudgetAlerts: true,
@@ -127,7 +140,6 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
     setToasts(prev => prev.filter(toast => toast.id !== id));
   };
 
-  // Store original settings for reset functionality
   useEffect(() => {
     if (!originalSettings) {
       setOriginalSettings({
@@ -137,12 +149,12 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
     }
   }, [settings, alertSettings, originalSettings]);
 
-  // Save alert settings to localStorage with optimistic updates
   useEffect(() => {
-    localStorage.setItem('spendsmart_alert_settings', JSON.stringify(alertSettings));
-  }, [alertSettings]);
+    if (isAuthenticated && userId) {
+      localStorage.setItem(`spendsmart_alert_settings_${userId}`, JSON.stringify(alertSettings));
+    }
+  }, [alertSettings, userId, isAuthenticated]);
 
-  // Update settings when props change
   useEffect(() => {
     setSettings(prev => ({ 
       ...prev, 
@@ -151,7 +163,6 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
     }));
   }, [monthlySavings, expenseLimit]);
 
-  // Optimistic dark mode toggle
   const handleDarkModeToggle = () => {
     toggleDarkMode();
     addToast({
@@ -161,15 +172,11 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
     });
   };
 
-  // Optimistic setting changes with immediate feedback
   const handleSettingChange = (key: string, value: string | boolean) => {
-    // Mark as having unsaved changes
     setHasUnsavedChanges(true);
     
-    // Optimistic update
     setSettings(prev => ({ ...prev, [key]: value }));
     
-    // Provide immediate feedback based on setting type
     const settingLabels: { [key: string]: string } = {
       currency: 'Currency',
       budgetAlerts: 'Budget Alerts',
@@ -202,20 +209,17 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
       });
     }
     
-    // Update the shared budget when monthly savings changes
     if (key === "monthlySavings" && typeof value === "string") {
       const budgetNumber = parseFloat(value) || 0;
       onBudgetChange(budgetNumber);
     }
     
-    // Update the shared expense limit when it changes
     if (key === "expenseLimit" && typeof value === "string") {
       const limitNumber = parseFloat(value) || 0;
       onExpenseLimitChange(limitNumber);
     }
   };
 
-  // Optimistic alert setting changes
   const handleAlertSettingChange = (key: string, value: string | boolean | number) => {
     setHasUnsavedChanges(true);
     
@@ -265,7 +269,6 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
     }
   };
 
-  // Optimistic browser notification permission request
   const requestNotificationPermission = async () => {
     if (!('Notification' in window)) {
       addToast({
@@ -290,7 +293,6 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
           message: 'Browser notifications enabled successfully!'
         });
         
-        // Show a test notification
         new Notification('SpendSmart Notifications', {
           body: 'You will now receive spending alerts and reminders.',
           icon: '/favicon.ico'
@@ -310,9 +312,16 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
     }
   };
 
-  // Optimistic save with progress feedback
   const handleSave = async () => {
     if (isSaving) return;
+    
+    if (!isAuthenticated || !userId) {
+      addToast({
+        type: 'error',
+        message: 'Please log in to save settings'
+      });
+      return;
+    }
     
     setIsSaving(true);
     addToast({
@@ -322,15 +331,13 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
     });
 
     try {
-      // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // In a real app, this would save to backend/database
-      console.log("Settings saved:", settings);
-      console.log("Alert settings saved:", alertSettings);
+      console.log("Settings saved for user:", userId);
+      console.log("Settings:", settings);
+      console.log("Alert settings:", alertSettings);
       console.log("Dark mode:", isDarkMode);
       
-      // Mark as saved
       setHasUnsavedChanges(false);
       setOriginalSettings({
         settings: { ...settings },
@@ -351,7 +358,6 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
     }
   };
 
-  // Reset to original settings
   const handleReset = async () => {
     if (isResetting || !originalSettings) return;
     
@@ -366,10 +372,8 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
     });
 
     try {
-      // Simulate reset process
       await new Promise(resolve => setTimeout(resolve, 800));
       
-      // Reset to original values
       setSettings(originalSettings.settings);
       setAlertSettings(originalSettings.alertSettings);
       setHasUnsavedChanges(false);
@@ -388,10 +392,36 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
     }
   };
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background flex items-center justify-center">
+        <div className="flex items-center gap-3">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          <span>Loading your settings...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated || !userId) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background flex items-center justify-center">
+        <Card className="w-96">
+          <CardContent className="text-center py-8">
+            <AlertCircle className="h-12 w-12 text-orange-500 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold mb-2">Authentication Required</h3>
+            <p className="text-muted-foreground">
+              Please log in to access your settings.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
       <div className="container mx-auto px-4 py-8">
-        {/* Toast notifications */}
         {toasts.map(toast => (
           <Toast key={toast.id} notification={toast} onRemove={removeToast} />
         ))}
@@ -405,7 +435,6 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
               <p className="text-muted-foreground">Manage your preferences and account settings</p>
             </div>
             
-            {/* Action buttons */}
             <div className="flex items-center gap-3">
               {hasUnsavedChanges && (
                 <div className="flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-lg">
@@ -455,7 +484,6 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* General Settings */}
           <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg hover:scale-[1.005]">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -464,7 +492,6 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Dark Mode Toggle */}
               <div className="flex items-center justify-between p-4 rounded-lg border bg-card transition-all duration-200 hover:bg-card/80 hover:scale-[1.005]">
                 <div className="flex items-center space-x-3">
                   <div className="p-2 rounded-lg bg-primary/10 transition-colors duration-200">
@@ -542,7 +569,6 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
             </CardContent>
           </Card>
 
-          {/* Spending Alerts Settings */}
           <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg hover:scale-[1.005]">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -551,7 +577,6 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Alert Types */}
               <div className="space-y-4">
                 <h4 className="font-medium">Alert Types</h4>
                 
@@ -606,7 +631,6 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
 
               <Separator />
 
-              {/* Alert Thresholds */}
               <div className="space-y-4">
                 <h4 className="font-medium">Alert Thresholds</h4>
                 
@@ -652,7 +676,6 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
 
               <Separator />
 
-              {/* Browser Notifications */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between p-3 rounded-lg transition-all duration-200 hover:bg-gray-50">
                   <div className="space-y-0.5">
@@ -688,7 +711,6 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
             </CardContent>
           </Card>
 
-          {/* Account & Security */}
           <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg hover:scale-[1.005]">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -700,18 +722,18 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
               <div className="space-y-3">
                 <h4 className="font-medium">Account Information</h4>
                 <div className="space-y-2">
-                  <Label>Email (Demo)</Label>
+                  <Label>User ID</Label>
                   <Input 
-                    type="email" 
-                    value="demo@spendsmart.com" 
+                    type="text" 
+                    value={userId || 'Not authenticated'} 
                     disabled 
-                    className="transition-colors duration-200"
+                    className="transition-colors duration-200 font-mono text-xs"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Account Type</Label>
                   <Input 
-                    value="Standalone Version" 
+                    value="AWS Cognito User" 
                     disabled 
                     className="transition-colors duration-200"
                   />
@@ -720,7 +742,6 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
             </CardContent>
           </Card>
 
-          {/* Notifications */}
           <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg hover:scale-[1.005]">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -765,7 +786,6 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
             </CardContent>
           </Card>
 
-          {/* About */}
           <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg hover:scale-[1.005] lg:col-span-2">
             <CardHeader>
               <CardTitle>About SpendSmart</CardTitle>
@@ -773,23 +793,23 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
             <CardContent className="space-y-4">
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <p className="text-sm"><strong>Version:</strong> 1.0.0 (Standalone)</p>
+                  <p className="text-sm"><strong>Version:</strong> 1.0.0 (AWS Deployed)</p>
                   <p className="text-sm"><strong>Built with:</strong> React, TypeScript, Tailwind CSS</p>
-                  <p className="text-sm"><strong>Database:</strong> SQLite (Local) / DynamoDB (AWS)</p>
+                  <p className="text-sm"><strong>Database:</strong> DynamoDB</p>
                   <p className="text-sm"><strong>Theme:</strong> {isDarkMode ? "Dark Mode" : "Light Mode"}</p>
                 </div>
                 
                 <div className="space-y-2">
                   <h4 className="font-medium">Features</h4>
                   <ul className="text-sm text-muted-foreground space-y-1">
+                    <li>- User Authentication with AWS Cognito</li>
                     <li>- Expense & Income Tracking</li>
                     <li>- Category Management</li>
                     <li>- Budget Monitoring</li>
+                    <li>- Recurring Transactions</li>
                     <li>- Visual Reports & Analytics</li>
                     <li>- CSV Export/Import</li>
                     <li>- Dark/Light Mode</li>
-                    <li>- Database Persistence</li>
-                    <li>- AWS Deployment Ready</li>
                     <li>- Spending Alerts & Notifications</li>
                   </ul>
                 </div>
@@ -797,11 +817,11 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
               
               <Separator />
               
-              {/* Settings Summary */}
               <div className="bg-muted/30 rounded-lg p-4 transition-all duration-200 hover:bg-muted/50">
                 <h4 className="font-medium mb-2">Current Settings Summary</h4>
                 <div className="grid md:grid-cols-2 gap-4 text-sm">
                   <div className="space-y-1">
+                    <p><strong>User ID:</strong> {userId ? `${userId.substring(0, 8)}...` : 'Not authenticated'}</p>
                     <p><strong>Currency:</strong> {settings.currency}</p>
                     <p><strong>Monthly Savings Goal:</strong> ${Number(settings.monthlySavings).toLocaleString()}</p>
                     <p><strong>Monthly Expense Limit:</strong> ${Number(settings.expenseLimit).toLocaleString()}</p>

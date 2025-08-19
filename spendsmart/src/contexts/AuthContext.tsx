@@ -1,21 +1,23 @@
 // src/contexts/AuthContext.tsx
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Amplify } from 'aws-amplify';
-import { signUp, signIn, signOut, getCurrentUser, confirmSignUp, resendSignUpCode } from 'aws-amplify/auth';
+import { signUp, signIn, signOut, getCurrentUser, confirmSignUp, resendSignUpCode, fetchUserAttributes } from 'aws-amplify/auth';
 import { amplifyConfig } from '../config/cognito';
 
 Amplify.configure(amplifyConfig);
 
 interface User {
+  id: string;           // NEW: Cognito sub ID - unique identifier
   email: string;
   given_name: string;
   family_name: string;
-  firstName?: string;  // For backward compatibility
-  lastName?: string;   // For backward compatibility
+  firstName?: string;   // For backward compatibility
+  lastName?: string;    // For backward compatibility
 }
 
 interface AuthContextType {
   user: User | null;
+  userId: string | null;  // NEW: Direct access to user ID
   isAuthenticated: boolean;
   isLoading: boolean;
   loading: boolean; // Alias for backward compatibility
@@ -30,6 +32,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -39,23 +42,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const checkAuthState = async () => {
     try {
+      // First check if user is authenticated
       const currentUser = await getCurrentUser();
-      const userAttributes = currentUser.signInDetails?.loginId 
-        ? { 
-            email: currentUser.signInDetails.loginId,
-            given_name: '',
-            family_name: '',
-            firstName: '', // For backward compatibility
-            lastName: ''   // For backward compatibility
-          }
-        : null;
       
-      if (userAttributes) {
-        setUser(userAttributes);
+      if (currentUser) {
+        // Get full user attributes including sub (unique ID)
+        const userAttributes = await fetchUserAttributes();
+        
+        console.log('User attributes from Cognito:', userAttributes);
+        
+        // Extract user data with the sub ID as the unique identifier
+        const userData: User = {
+          id: userAttributes.sub || '', // sub is the unique Cognito user ID
+          email: userAttributes.email || '',
+          given_name: userAttributes.given_name || '',
+          family_name: userAttributes.family_name || '',
+          firstName: userAttributes.given_name || '', // For backward compatibility
+          lastName: userAttributes.family_name || ''   // For backward compatibility
+        };
+        
+        console.log('Processed user data:', userData);
+        
+        setUser(userData);
+        setUserId(userData.id);
         setIsAuthenticated(true);
+        
+        console.log('User authenticated with ID:', userData.id);
       }
     } catch (error) {
-      console.log('No authenticated user found');
+      console.log('No authenticated user found:', error);
+      setUser(null);
+      setUserId(null);
+      setIsAuthenticated(false);
     } finally {
       setIsLoading(false);
     }
@@ -166,7 +184,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (result.isSignedIn) {
-        await checkAuthState();
+        await checkAuthState(); // This will now properly set the user ID
         return { success: true };
       }
 
@@ -196,6 +214,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await signOut();
       setUser(null);
+      setUserId(null);
       setIsAuthenticated(false);
     } catch (error) {
       console.error('Logout error:', error);
@@ -204,6 +223,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const value = {
     user,
+    userId,           // NEW: Direct access to user ID
     isAuthenticated,
     isLoading,
     loading: isLoading, // Alias for backward compatibility

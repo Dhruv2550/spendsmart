@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../config/api';
+import { useAuth } from '../contexts/AuthContext';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -67,6 +68,8 @@ interface BudgetSummary {
 }
 
 const EnvelopeBudgetingPage: React.FC = () => {
+  const { userId } = useAuth();
+  
   const [budgets, setBudgets] = useState<EnvelopeBudget[]>([]);
   const [templates, setTemplates] = useState<BudgetTemplate[]>([]);
   const [analysis, setAnalysis] = useState<BudgetAnalysis[]>([]);
@@ -92,6 +95,12 @@ const EnvelopeBudgetingPage: React.FC = () => {
     "Entertainment", "Utilities", "Healthcare", "Other"
   ];
 
+  const getAuthHeaders = () => ({
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${userId}`,
+    'X-User-ID': userId || '',
+  });
+
   const optimisticTemplateChange = (newTemplate: string) => {
     setSelectedTemplate(newTemplate);
     setBackgroundLoading(true);
@@ -107,10 +116,12 @@ const EnvelopeBudgetingPage: React.FC = () => {
   };
 
   const optimisticTemplateCopy = async (templateName: string, sourceMonth: string, targetMonth: string) => {
+    if (!userId) return;
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/budget-templates/${templateName}/copy`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           source_month: sourceMonth,
           target_month: targetMonth,
@@ -130,12 +141,14 @@ const EnvelopeBudgetingPage: React.FC = () => {
 
   const optimisticTemplateDelete = async (templateName: string) => {
     if (!window.confirm(`Delete template "${templateName}"?`)) return;
+    if (!userId) return;
     
     setPendingDeletes(prev => new Set([...prev, templateName]));
     
     try {
       const response = await fetch(`${API_BASE_URL}/api/budget-templates/${templateName}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: getAuthHeaders()
       });
       
       if (response.ok) {
@@ -164,10 +177,15 @@ const EnvelopeBudgetingPage: React.FC = () => {
   }, [selectedTemplate]);
 
   const loadData = async () => {
+    if (!userId) return;
+    
     setBackgroundLoading(true);
     
     try {
-      const templatesResponse = await fetch(`${API_BASE_URL}/api/budget-templates`);
+      const templatesResponse = await fetch(`${API_BASE_URL}/api/budget-templates`, {
+        headers: getAuthHeaders()
+      });
+      
       if (templatesResponse.ok) {
         const templatesData = await templatesResponse.json();
         setTemplates(templatesData.filter((t: BudgetTemplate) => !pendingDeletes.has(t.template_name)));
@@ -185,13 +203,19 @@ const EnvelopeBudgetingPage: React.FC = () => {
       }
       
       if (selectedTemplate) {
-        const budgetsResponse = await fetch(`${API_BASE_URL}/api/budgets/${selectedTemplate}/${selectedMonth}`);
+        const budgetsResponse = await fetch(`${API_BASE_URL}/api/budgets/${selectedTemplate}/${selectedMonth}`, {
+          headers: getAuthHeaders()
+        });
+        
         if (budgetsResponse.ok) {
           const budgetsData = await budgetsResponse.json();
           setBudgets(budgetsData);
         }
         
-        const analysisResponse = await fetch(`${API_BASE_URL}/api/budget-analysis/${selectedTemplate}/${selectedMonth}`);
+        const analysisResponse = await fetch(`${API_BASE_URL}/api/budget-analysis/${selectedTemplate}/${selectedMonth}`, {
+          headers: getAuthHeaders()
+        });
+        
         if (analysisResponse.ok) {
           const analysisData = await analysisResponse.json();
           setAnalysis(analysisData.analysis);
@@ -206,8 +230,10 @@ const EnvelopeBudgetingPage: React.FC = () => {
   };
 
   useEffect(() => {
-    loadData();
-  }, [selectedTemplate, selectedMonth]);
+    if (userId) {
+      loadData();
+    }
+  }, [selectedTemplate, selectedMonth, userId]);
 
   const formatCurrency = (amount: number) => `$${amount.toLocaleString()}`;
 
@@ -273,6 +299,8 @@ const EnvelopeBudgetingPage: React.FC = () => {
 
     const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
+      if (!userId) return;
+      
       setSaving(true);
 
       try {
@@ -286,7 +314,7 @@ const EnvelopeBudgetingPage: React.FC = () => {
 
           const response = await fetch(`${API_BASE_URL}/api/budgets/${editingTemplateName}/${selectedMonth}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
               budgets: budgetsToUpdate
             })
@@ -298,7 +326,7 @@ const EnvelopeBudgetingPage: React.FC = () => {
         } else {
           const response = await fetch(`${API_BASE_URL}/api/budget-templates`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
               template_name: templateData.template_name,
               categories: templateData.budgets
@@ -438,6 +466,18 @@ const EnvelopeBudgetingPage: React.FC = () => {
       </Dialog>
     );
   };
+
+  if (!userId) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
+        <div className="container mx-auto px-4 py-8">
+          <div className="text-center">
+            <p className="text-lg">Loading user session...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">

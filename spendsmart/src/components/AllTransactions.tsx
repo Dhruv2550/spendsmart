@@ -96,13 +96,11 @@ const AllTransactions = ({ transactions, onEdit, onDelete, onClose }: AllTransac
   }, [transactions]);
 
   const optimisticFilterChange = (filterFn: () => void, message: string) => {
-    filterFn();;
+    filterFn();
   };
 
   const optimisticSearch = (value: string) => {
     setSearchTerm(value);
-    if (value.trim()) {
-    }
   };
 
   const handleOptimisticDelete = (id: number, transaction: Transaction) => {
