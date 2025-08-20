@@ -78,7 +78,10 @@ const EnvelopeBudgetingPage: React.FC = () => {
   const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(new Set());
   
   const [selectedTemplate, setSelectedTemplate] = useState(() => {
-    return localStorage.getItem('spendsmart_selected_budget_template') || 'Default';
+    if (userId) {
+      return localStorage.getItem(`spendsmart_selected_budget_template_${userId}`) || 'Default';
+    }
+    return 'Default';
   });
   
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -153,7 +156,7 @@ const EnvelopeBudgetingPage: React.FC = () => {
       
       if (response.ok) {
         if (selectedTemplate === templateName) {
-          localStorage.removeItem('spendsmart_selected_budget_template');
+          localStorage.removeItem(`spendsmart_selected_budget_template_${userId}`);
           setSelectedTemplate('Default');
         }
         loadData();
@@ -171,10 +174,17 @@ const EnvelopeBudgetingPage: React.FC = () => {
   };
 
   useEffect(() => {
-    if (selectedTemplate) {
-      localStorage.setItem('spendsmart_selected_budget_template', selectedTemplate);
+    if (selectedTemplate && userId) {
+      localStorage.setItem(`spendsmart_selected_budget_template_${userId}`, selectedTemplate);
     }
-  }, [selectedTemplate]);
+  }, [selectedTemplate, userId]);
+
+  useEffect(() => {
+    if (userId) {
+      const userSpecificTemplate = localStorage.getItem(`spendsmart_selected_budget_template_${userId}`) || 'Default';
+      setSelectedTemplate(userSpecificTemplate);
+    }
+  }, [userId]);
 
   const loadData = async () => {
     if (!userId) return;
