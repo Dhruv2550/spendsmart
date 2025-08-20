@@ -34,12 +34,11 @@ import {
   Clock,
   ChevronDown,
   ChevronRight,
-  Info,
-  Undo2
+  Info
 } from 'lucide-react';
 
 interface InvestmentGoal {
-  id: number;
+  id: string;
   name: string;
   description: string;
   targetAmount: number;
@@ -53,44 +52,69 @@ interface InvestmentGoal {
 }
 
 interface InvestmentContribution {
-  id: number;
-  goalId: number;
+  id: string;
+  goalId: string;
   amount: number;
   date: string;
   source: 'manual' | 'auto' | 'bonus' | 'saved_expense';
   note?: string;
 }
 
-interface OptimisticOperation {
-  id: string;
-  type: 'create_goal' | 'update_goal' | 'delete_goal' | 'add_contribution';
-  goalId?: number;
-  originalData?: any;
-}
-
 const GoalsPage: React.FC = () => {
-  const { userId } = useAuth();
+  const { userId, isAuthenticated, isLoading } = useAuth();
   
   const [goals, setGoals] = useState<InvestmentGoal[]>([]);
   const [contributions, setContributions] = useState<InvestmentContribution[]>([]);
   const [showAddGoal, setShowAddGoal] = useState(false);
   const [showAddContribution, setShowAddContribution] = useState(false);
   const [editingGoal, setEditingGoal] = useState<InvestmentGoal | null>(null);
-  const [selectedGoalId, setSelectedGoalId] = useState<number | null>(null);
+  const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showCompletedGoals, setShowCompletedGoals] = useState(false);
   const [currentSavings, setCurrentSavings] = useState(0);
   const [activeTab, setActiveTab] = useState('goals');
-  
-  const [optimisticOperations, setOptimisticOperations] = useState<OptimisticOperation[]>([]);
-  const [deletedGoalId, setDeletedGoalId] = useState<number | null>(null);
-  const [pendingOperations, setPendingOperations] = useState<Set<string>>(new Set());
 
   const getAuthHeaders = () => ({
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${userId}`,
     'X-User-ID': userId || '',
   });
+
+  const loadGoalsData = async () => {
+    if (!userId) return;
+    
+    setLoading(true);
+    try {
+      const [goalsResponse, contributionsResponse] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/goals`, {
+          headers: getAuthHeaders()
+        }),
+        fetch(`${API_BASE_URL}/api/goals/contributions`, {
+          headers: getAuthHeaders()
+        })
+      ]);
+      
+      if (goalsResponse.ok) {
+        const goalsData = await goalsResponse.json();
+        setGoals(goalsData);
+      }
+      
+      if (contributionsResponse.ok) {
+        const contributionsData = await contributionsResponse.json();
+        setContributions(contributionsData);
+      }
+    } catch (error) {
+      console.error('Error loading goals data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isAuthenticated && userId && !isLoading) {
+      loadGoalsData();
+    }
+  }, [isAuthenticated, userId, isLoading]);
 
   useEffect(() => {
     const fetchCurrentSavings = async () => {
@@ -117,32 +141,10 @@ const GoalsPage: React.FC = () => {
       }
     };
 
-    fetchCurrentSavings();
-  }, [userId]);
-
-  useEffect(() => {
-    const savedGoals = localStorage.getItem('spendsmart_financial_goals');
-    const savedContributions = localStorage.getItem('spendsmart_goal_contributions');
-    
-    if (savedGoals) {
-      setGoals(JSON.parse(savedGoals));
+    if (isAuthenticated && userId && !isLoading) {
+      fetchCurrentSavings();
     }
-    if (savedContributions) {
-      setContributions(JSON.parse(savedContributions));
-    }
-  }, []);
-
-  useEffect(() => {
-    if (goals.length > 0) {
-      localStorage.setItem('spendsmart_financial_goals', JSON.stringify(goals));
-    }
-  }, [goals]);
-
-  useEffect(() => {
-    if (contributions.length > 0) {
-      localStorage.setItem('spendsmart_goal_contributions', JSON.stringify(contributions));
-    }
-  }, [contributions]);
+  }, [isAuthenticated, userId, isLoading]);
 
   const goalMetrics = useMemo(() => {
     const activeGoals = goals.filter(g => g.isActive && g.currentAmount < g.targetAmount);
@@ -434,7 +436,7 @@ const GoalsPage: React.FC = () => {
   };
 
   const ContributionForm: React.FC<{
-    goalId: number;
+    goalId: string;
     onClose: () => void;
     onSave: (contribution: Omit<InvestmentContribution, 'id'>) => void;
   }> = ({ goalId, onClose, onSave }) => {
@@ -566,165 +568,118 @@ const GoalsPage: React.FC = () => {
     );
   };
 
-  const handleAddGoal = (goalData: Omit<InvestmentGoal, 'id'>) => {
-    const newGoal = {
-      ...goalData,
-      id: Math.max(...goals.map(g => g.id), 0) + 1
-    };
+  const handleAddGoal = async (goalData: Omit<InvestmentGoal, 'id'>) => {
+    if (!userId) return;
     
-    setGoals(prev => [...prev, newGoal]);
-    
-    const operationId = Math.random().toString(36).substr(2, 9);
-    setOptimisticOperations(prev => [...prev, {
-      id: operationId,
-      type: 'create_goal',
-      goalId: newGoal.id
-    }]);
-
-    setTimeout(() => {
-      setOptimisticOperations(prev => prev.filter(op => op.id !== operationId));
-    }, 1000);
-  };
-
-  const handleEditGoal = (goalData: Omit<InvestmentGoal, 'id'>) => {
-    if (editingGoal) {
-      const originalGoal = editingGoal;
-      const updatedGoal = { ...goalData, id: editingGoal.id };
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/goals`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(goalData)
+      });
       
-      setGoals(prev => prev.map(goal => 
-        goal.id === editingGoal.id ? updatedGoal : goal
-      ));
-      
-      const operationId = Math.random().toString(36).substr(2, 9);
-      setOptimisticOperations(prev => [...prev, {
-        id: operationId,
-        type: 'update_goal',
-        goalId: editingGoal.id,
-        originalData: originalGoal
-      }]);
-
-      setEditingGoal(null);
-
-      setTimeout(() => {
-        setOptimisticOperations(prev => prev.filter(op => op.id !== operationId));
-      }, 1000);
+      if (response.ok) {
+        await loadGoalsData(); // Reload all data
+      } else {
+        console.error('Failed to create goal');
+      }
+    } catch (error) {
+      console.error('Error creating goal:', error);
     }
   };
 
-  const handleDeleteGoal = (id: number) => {
-    const goalToDelete = goals.find(g => g.id === id);
-    if (!goalToDelete) return;
+  const handleEditGoal = async (goalData: Omit<InvestmentGoal, 'id'>) => {
+    if (!editingGoal || !userId) return;
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/goals/${editingGoal.id}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(goalData)
+      });
+      
+      if (response.ok) {
+        await loadGoalsData(); // Reload all data
+        setEditingGoal(null);
+      } else {
+        console.error('Failed to update goal');
+      }
+    } catch (error) {
+      console.error('Error updating goal:', error);
+    }
+  };
 
+  const handleDeleteGoal = async (id: string) => {
+    if (!userId) return;
+    
     const confirmed = window.confirm('Are you sure you want to delete this goal? All associated contributions will also be deleted.');
     
     if (confirmed) {
-      const originalGoals = goals;
-      const originalContributions = contributions;
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/goals/${id}`, {
+          method: 'DELETE',
+          headers: getAuthHeaders()
+        });
+        
+        if (response.ok) {
+          await loadGoalsData(); // Reload all data
+        } else {
+          console.error('Failed to delete goal');
+        }
+      } catch (error) {
+        console.error('Error deleting goal:', error);
+      }
+    }
+  };
+
+  const handleAddContribution = async (contributionData: Omit<InvestmentContribution, 'id'>) => {
+    if (!userId) return;
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/goals/${contributionData.goalId}/contributions`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(contributionData)
+      });
       
-      setGoals(prev => prev.filter(goal => goal.id !== id));
-      setContributions(prev => prev.filter(contrib => contrib.goalId !== id));
-      setDeletedGoalId(id);
-
-      const operationId = Math.random().toString(36).substr(2, 9);
-      setOptimisticOperations(prev => [...prev, {
-        id: operationId,
-        type: 'delete_goal',
-        goalId: id,
-        originalData: { goals: originalGoals, contributions: originalContributions }
-      }]);
-
-      setTimeout(() => {
-        setOptimisticOperations(prev => prev.filter(op => op.id !== operationId));
-        setDeletedGoalId(null);
-      }, 5000);
+      if (response.ok) {
+        await loadGoalsData(); // Reload all data to get updated goal amounts
+      } else {
+        console.error('Failed to add contribution');
+      }
+    } catch (error) {
+      console.error('Error adding contribution:', error);
     }
-  };
-
-  const handleUndoDelete = () => {
-    const deleteOperation = optimisticOperations.find(op => 
-      op.type === 'delete_goal' && op.goalId === deletedGoalId
-    );
-    
-    if (deleteOperation && deleteOperation.originalData) {
-      setGoals(deleteOperation.originalData.goals);
-      setContributions(deleteOperation.originalData.contributions);
-      setOptimisticOperations(prev => prev.filter(op => op.id !== deleteOperation.id));
-      setDeletedGoalId(null);
-    }
-  };
-
-  const handleAddContribution = (contributionData: Omit<InvestmentContribution, 'id'>) => {
-    const newContribution = {
-      ...contributionData,
-      id: Math.max(...contributions.map(c => c.id), 0) + 1
-    };
-    
-    setContributions(prev => [...prev, newContribution]);
-    setGoals(prev => prev.map(goal => 
-      goal.id === contributionData.goalId 
-        ? { ...goal, currentAmount: goal.currentAmount + contributionData.amount }
-        : goal
-    ));
-
-    const operationId = Math.random().toString(36).substr(2, 9);
-    setOptimisticOperations(prev => [...prev, {
-      id: operationId,
-      type: 'add_contribution'
-    }]);
-
-    setTimeout(() => {
-      setOptimisticOperations(prev => prev.filter(op => op.id !== operationId));
-    }, 1000);
   };
 
   const handleToggleCompletedGoals = () => {
     setShowCompletedGoals(prev => !prev);
   };
 
-  if (!userId) {
+  // Add the consistent loading check like other pages
+  if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
-        <div className="container mx-auto px-4 py-8">
-          <div className="text-center">
-            <p className="text-lg">Loading user session...</p>
-          </div>
+      <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background flex items-center justify-center">
+        <div className="flex items-center gap-3">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          <span>Loading your data...</span>
         </div>
       </div>
     );
   }
 
-  if (loading) {
+  if (!isAuthenticated || !userId) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
-        <div className="container mx-auto px-4 py-8">
-          <div className="mb-8">
-            <div className="h-8 bg-gray-200 rounded w-32 mb-2 animate-pulse"></div>
-            <div className="h-4 bg-gray-200 rounded w-64 animate-pulse"></div>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8">
-            {[1, 2, 3, 4].map((i) => (
-              <Card key={i} className="border-0 shadow-md bg-gradient-to-br from-card to-card/95">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <div className="h-4 bg-gray-200 rounded w-20 animate-pulse"></div>
-                  <div className="h-4 w-4 bg-gray-200 rounded animate-pulse"></div>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-8 bg-gray-200 rounded w-16 mb-1 animate-pulse"></div>
-                  <div className="h-3 bg-gray-200 rounded w-24 animate-pulse"></div>
-                  {i === 4 && (
-                    <div className="mt-2 pt-2 border-t">
-                      <div className="flex justify-between items-center">
-                        <div className="h-3 bg-gray-200 rounded w-20 animate-pulse"></div>
-                        <div className="h-3 bg-gray-200 rounded w-16 animate-pulse"></div>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
+      <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background flex items-center justify-center">
+        <Card className="w-96">
+          <CardContent className="text-center py-8">
+            <AlertCircle className="h-12 w-12 text-orange-500 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold mb-2">Authentication Required</h3>
+            <p className="text-muted-foreground">
+              Please log in to view your goals.
+            </p>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -732,22 +687,6 @@ const GoalsPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
       <div className="container mx-auto px-4 py-8">
-        {deletedGoalId && (
-          <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-lg border shadow-lg bg-orange-50 text-orange-800 border-orange-200">
-            <AlertCircle className="h-4 w-4" />
-            <span className="text-sm font-medium">Goal deleted</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleUndoDelete}
-              className="ml-2 text-orange-700 hover:text-orange-900 transition-colors duration-200"
-            >
-              <Undo2 className="h-3 w-3 mr-1" />
-              Undo
-            </Button>
-          </div>
-        )}
-
         <div className="mb-8 transition-all duration-300">
           <h1 className="text-3xl font-bold text-primary mb-2">
             Goals
