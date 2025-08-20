@@ -3,6 +3,7 @@ import { Button } from "./ui/button";
 import { Home, BarChart3, Settings, Menu, X, TrendingUp, Repeat, Package, CheckCircle, AlertCircle, Info, Loader2, LogOut, User } from "lucide-react";
 import { cn } from "../lib/utils";
 import { useAuth } from "../contexts/AuthContext";
+import { UserAccountModal } from "./UserAccountModal"; // Import the new component
 
 interface ToastNotification {
   id: string;
@@ -67,6 +68,7 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
   const [isNavigating, setIsNavigating] = useState(false);
   const [pendingPage, setPendingPage] = useState<string | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [showAccountModal, setShowAccountModal] = useState(false); // Add state for account modal
 
   const addToast = (toast: Omit<ToastNotification, 'id'>) => {
     const id = Math.random().toString(36).substr(2, 9);
@@ -164,6 +166,16 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
     });
   };
 
+  // Handle user panel click
+  const handleUserPanelClick = () => {
+    setShowAccountModal(true);
+    addToast({
+      type: 'info',
+      message: 'Opening account information',
+      duration: 2000
+    });
+  };
+
   const getNavigationItemState = (itemId: string) => {
     const isActive = currentPage === itemId;
     const isPending = pendingPage === itemId && isNavigating;
@@ -185,6 +197,12 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
       {toasts.map(toast => (
         <Toast key={toast.id} notification={toast} onRemove={removeToast} />
       ))}
+
+      {/* User Account Modal */}
+      <UserAccountModal 
+        isOpen={showAccountModal} 
+        onClose={() => setShowAccountModal(false)} 
+      />
 
       <div className="lg:hidden fixed top-4 right-4 z-50">
         <Button
@@ -215,13 +233,17 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
           </p>
         </div>
 
+        {/* Clickable User Panel */}
         <div className="px-4 mb-4">
-          <div className="bg-secondary/30 rounded-lg p-3 transition-all duration-200 hover:bg-secondary/50">
+          <button
+            onClick={handleUserPanelClick}
+            className="w-full bg-secondary/30 rounded-lg p-3 transition-all duration-200 hover:bg-secondary/50 hover:scale-[1.02] active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-primary/20"
+          >
             <div className="flex items-center gap-3">
-              <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+              <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center transition-colors duration-200 hover:bg-primary/20">
                 <User className="h-4 w-4 text-primary" />
               </div>
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-0 text-left">
                 <p className="text-sm font-medium truncate">
                   {getUserDisplayName()}
                 </p>
@@ -229,8 +251,11 @@ const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
                   {userId ? `ID: ${userId.substring(0, 8)}...` : 'Account Active'}
                 </p>
               </div>
+              <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <div className="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+              </div>
             </div>
-          </div>
+          </button>
         </div>
 
         <nav className="px-4 space-y-2">
