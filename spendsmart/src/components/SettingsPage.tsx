@@ -785,56 +785,6 @@ const SettingsPage = ({ monthlySavings, onBudgetChange, expenseLimit, onExpenseL
               ))}
             </CardContent>
           </Card>
-
-          <Card className="border-0 shadow-md bg-gradient-to-br from-card to-card/95 transition-all duration-300 hover:shadow-lg hover:scale-[1.005] lg:col-span-2">
-            <CardHeader>
-              <CardTitle>About SpendSmart</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <p className="text-sm"><strong>Version:</strong> 1.0.0 (AWS Deployed)</p>
-                  <p className="text-sm"><strong>Built with:</strong> React, TypeScript, Tailwind CSS</p>
-                  <p className="text-sm"><strong>Database:</strong> DynamoDB</p>
-                  <p className="text-sm"><strong>Theme:</strong> {isDarkMode ? "Dark Mode" : "Light Mode"}</p>
-                </div>
-                
-                <div className="space-y-2">
-                  <h4 className="font-medium">Features</h4>
-                  <ul className="text-sm text-muted-foreground space-y-1">
-                    <li>- User Authentication with AWS Cognito</li>
-                    <li>- Expense & Income Tracking</li>
-                    <li>- Category Management</li>
-                    <li>- Budget Monitoring</li>
-                    <li>- Recurring Transactions</li>
-                    <li>- Visual Reports & Analytics</li>
-                    <li>- CSV Export/Import</li>
-                    <li>- Dark/Light Mode</li>
-                    <li>- Spending Alerts & Notifications</li>
-                  </ul>
-                </div>
-              </div>
-              
-              <Separator />
-              
-              <div className="bg-muted/30 rounded-lg p-4 transition-all duration-200 hover:bg-muted/50">
-                <h4 className="font-medium mb-2">Current Settings Summary</h4>
-                <div className="grid md:grid-cols-2 gap-4 text-sm">
-                  <div className="space-y-1">
-                    <p><strong>User ID:</strong> {userId ? `${userId.substring(0, 8)}...` : 'Not authenticated'}</p>
-                    <p><strong>Currency:</strong> {settings.currency}</p>
-                    <p><strong>Monthly Savings Goal:</strong> ${Number(settings.monthlySavings).toLocaleString()}</p>
-                    <p><strong>Monthly Expense Limit:</strong> ${Number(settings.expenseLimit).toLocaleString()}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p><strong>Alert Thresholds:</strong> {alertSettings.alertThresholds.warning}% / {alertSettings.alertThresholds.critical}%</p>
-                    <p><strong>Browser Notifications:</strong> {alertSettings.browserNotifications ? 'Enabled' : 'Disabled'}</p>
-                    <p><strong>Active Alerts:</strong> {Object.values(alertSettings).filter(v => v === true).length} enabled</p>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </div>
     </div>
