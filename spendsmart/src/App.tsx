@@ -1,4 +1,4 @@
-// src/App.tsx - Updated with Authentication and Confirmation
+// src/App.tsx - Updated with proper routing for page persistence
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import SignUpPage from './components/auth/SignUpPage';
@@ -80,18 +80,62 @@ const App = () => (
                 </PublicRoute>
               } 
             />
-            {/* Protected Routes - All your existing SpendSmart pages */}
+            
+            {/* Protected Routes - Individual pages with proper URLs */}
             <Route 
-              path="/*" 
+              path="/dashboard" 
               element={
                 <ProtectedRoute>
-                  <AppLayout />
+                  <AppLayout currentPage="dashboard" />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/analytics" 
+              element={
+                <ProtectedRoute>
+                  <AppLayout currentPage="analytics" />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/goals" 
+              element={
+                <ProtectedRoute>
+                  <AppLayout currentPage="goals" />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/recurring" 
+              element={
+                <ProtectedRoute>
+                  <AppLayout currentPage="recurring" />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/budgeting" 
+              element={
+                <ProtectedRoute>
+                  <AppLayout currentPage="budgeting" />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/settings" 
+              element={
+                <ProtectedRoute>
+                  <AppLayout currentPage="settings" />
                 </ProtectedRoute>
               } 
             />
             
             {/* Root redirect */}
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            
+            {/* Catch-all redirect for unknown routes */}
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </Router>
       </DarkModeProvider>
